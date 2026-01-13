@@ -15,9 +15,10 @@ interface ExportStepProps {
   onConfigChange: (config: DriveConfig) => void;
   isConnected: boolean;
   onConnect: () => void;
+  workflowId: string | null;
 }
 
-export function ExportStep({ images, config, onConfigChange, isConnected, onConnect }: ExportStepProps) {
+export function ExportStep({ images, config, onConfigChange, isConnected, onConnect, workflowId }: ExportStepProps) {
   const [localConfig, setLocalConfig] = useState<DriveConfig>(config);
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -29,6 +30,11 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
     setIsConnecting(true);
     await onConnect();
     setIsConnecting(false);
+  };
+
+  const handleDownloadZip = () => {
+    if (!workflowId) return;
+    window.open(`/api/download/${workflowId}`, '_blank');
   };
 
   return (
@@ -48,7 +54,7 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
               Google Drive Connection
             </CardTitle>
             <CardDescription>
-              Connect your Google Drive account
+              Your Google Drive is connected via Replit
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -63,12 +69,12 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
                 </div>
                 <div>
                   <p className="font-medium text-sm">
-                    {isConnected ? "Connected" : "Not Connected"}
+                    {isConnected ? "Connected" : "Checking..."}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {isConnected 
                       ? "Ready to export files" 
-                      : "Connect to enable export"}
+                      : "Checking connection status"}
                   </p>
                 </div>
               </div>
@@ -81,12 +87,12 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
                 {isConnecting ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Connecting...
+                    Checking...
                   </>
                 ) : isConnected ? (
-                  "Reconnect"
+                  "Refresh"
                 ) : (
-                  "Connect Drive"
+                  "Check Connection"
                 )}
               </Button>
             </div>
@@ -111,7 +117,7 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Enter the path where images will be saved
+                      Enter the path where images will be saved (will be created if it doesn't exist)
                     </p>
                   </div>
 
@@ -161,12 +167,13 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                You can also download all processed images as a ZIP file without connecting to Google Drive.
+                You can also download all processed images as a ZIP file without using Google Drive.
               </p>
               <Button 
                 variant="outline" 
                 className="w-full"
-                disabled={images.length === 0}
+                disabled={images.length === 0 || !workflowId}
+                onClick={handleDownloadZip}
                 data-testid="button-download-zip"
               >
                 <Download className="h-4 w-4 mr-2" />

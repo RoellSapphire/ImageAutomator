@@ -7,7 +7,8 @@ import sharp from "sharp";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
-import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig } from "@shared/schema";
+import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig } from "@shared/schema";
+import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive } from "./google-drive";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -327,6 +328,82 @@ export async function registerRoutes(
     } catch (error) {
       console.error('Download error:', error);
       res.status(500).json({ message: 'Failed to create download' });
+    }
+  });
+
+  // Google Drive endpoints
+  app.get('/api/drive/status', async (req: Request, res: Response) => {
+    try {
+      const isConnected = await checkDriveConnection();
+      res.json({ connected: isConnected });
+    } catch (error) {
+      res.json({ connected: false });
+    }
+  });
+
+  app.post('/api/drive/export', async (req: Request, res: Response) => {
+    try {
+      const { workflowId, driveConfig } = req.body as {
+        workflowId: string;
+        driveConfig: DriveConfig;
+      };
+
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow) {
+        return res.status(404).json({ message: 'Workflow not found' });
+      }
+
+      let folderPath = driveConfig.folderPath || '/Civitai Images';
+      if (driveConfig.createSubfolder && driveConfig.subfolderName) {
+        folderPath = `${folderPath}/${driveConfig.subfolderName}`;
+      }
+
+      const folderId = await findOrCreateFolder(folderPath);
+      const uploadedFiles: { name: string; id: string; link: string }[] = [];
+
+      for (const image of workflow.images) {
+        const imagePath = image.processedPath || image.originalPath;
+        if (!imagePath || !fs.existsSync(imagePath)) continue;
+
+        const ext = path.extname(image.newName).toLowerCase();
+        const mimeType = ext === '.png' ? 'image/png' :
+                        ext === '.webp' ? 'image/webp' :
+                        ext === '.gif' ? 'image/gif' :
+                        'image/jpeg';
+
+        try {
+          const result = await uploadFileToDrive(imagePath, image.newName, mimeType, folderId);
+          uploadedFiles.push({
+            name: image.newName,
+            id: result.id,
+            link: result.webViewLink,
+          });
+        } catch (uploadError) {
+          console.error(`Failed to upload ${image.newName} to Drive:`, uploadError);
+        }
+      }
+
+      await storage.updateWorkflow(workflowId, {
+        driveConfig,
+        currentStep: 5,
+      });
+
+      res.json({
+        success: true,
+        uploadedCount: uploadedFiles.length,
+        totalCount: workflow.images.length,
+        files: uploadedFiles,
+        message: `Uploaded ${uploadedFiles.length} files to Google Drive`,
+      });
+
+    } catch (error) {
+      console.error('Drive export error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to export to Google Drive';
+      const statusCode = errorMessage.includes('not connected') ? 503 : 500;
+      res.status(statusCode).json({ 
+        message: errorMessage,
+        hint: statusCode === 503 ? 'Please connect Google Drive in Replit settings' : undefined
+      });
     }
   });
 

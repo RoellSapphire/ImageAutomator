@@ -96,11 +96,29 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   }, []);
 
   const handleDriveConnect = useCallback(async () => {
-    setIsDriveConnected(true);
-    toast({
-      title: "Google Drive Connected",
-      description: "You can now export files to your Drive",
-    });
+    try {
+      const response = await fetch('/api/drive/status');
+      const data = await response.json();
+      setIsDriveConnected(data.connected);
+      if (data.connected) {
+        toast({
+          title: "Google Drive Connected",
+          description: "You can now export files to your Drive",
+        });
+      } else {
+        toast({
+          title: "Drive Not Connected",
+          description: "Please connect Google Drive in Replit settings",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Check Failed",
+        description: "Could not verify Google Drive connection",
+        variant: "destructive",
+      });
+    }
   }, [toast]);
 
   const handleWordpressConfigChange = useCallback((config: WordPressConfig) => {
@@ -196,6 +214,42 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         setIsProcessing(false);
       }
     } else if (currentStep === 4) {
+      if (isDriveConnected) {
+        setIsProcessing(true);
+        try {
+          const response = await fetch('/api/drive/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              workflowId,
+              driveConfig,
+            }),
+          });
+          
+          const data = await response.json();
+          
+          if (response.ok) {
+            toast({
+              title: "Export Complete",
+              description: data.message || `Uploaded ${data.uploadedCount} files to Google Drive`,
+            });
+          } else {
+            toast({
+              title: "Export Failed",
+              description: data.message || "Could not export to Google Drive",
+              variant: "destructive",
+            });
+          }
+        } catch (error) {
+          toast({
+            title: "Export Error",
+            description: "Failed to export to Google Drive",
+            variant: "destructive",
+          });
+        } finally {
+          setIsProcessing(false);
+        }
+      }
       onStepComplete(4);
       onStepChange(5);
     } else if (currentStep === 5) {
@@ -235,7 +289,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         setIsProcessing(false);
       }
     }
-  }, [currentStep, workflowId, renameConfig, enhanceConfig, wordpressConfig, onStepChange, onStepComplete, toast]);
+  }, [currentStep, workflowId, renameConfig, enhanceConfig, driveConfig, wordpressConfig, isDriveConnected, onStepChange, onStepComplete, toast]);
 
   const canProceed = useCallback(() => {
     switch (currentStep) {
@@ -305,6 +359,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             onConfigChange={handleDriveConfigChange}
             isConnected={isDriveConnected}
             onConnect={handleDriveConnect}
+            workflowId={workflowId}
           />
         );
       case 5:
