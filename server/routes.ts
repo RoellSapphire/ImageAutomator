@@ -532,17 +532,47 @@ export async function registerRoutes(
       
       if (armemberApiKey) {
         try {
-          const plansResponse = await fetch(`${siteUrl}/wp-json/armember/v1/arm_memberships?arm_api_key=${armemberApiKey}`);
+          const armemberUrl = `${siteUrl}/wp-json/armember/v1/arm_memberships?arm_api_key=${armemberApiKey}`;
+          console.log('Fetching ARMember plans from:', armemberUrl);
+          
+          const plansResponse = await fetch(armemberUrl);
+          console.log('ARMember response status:', plansResponse.status);
           
           if (plansResponse.ok) {
             const plansData = await plansResponse.json();
-            if (Array.isArray(plansData) && plansData.length > 0) {
-              armemberPlans = plansData.map((plan: any) => ({
-                id: String(plan.arm_subscription_plan_id || plan.id),
-                name: plan.arm_subscription_plan_name || plan.name || 'Unknown Plan',
-                description: plan.arm_subscription_plan_description || plan.description,
-              }));
+            console.log('ARMember raw response:', JSON.stringify(plansData, null, 2));
+            
+            if (plansData && typeof plansData === 'object') {
+              let plansArray: any[] = [];
+              
+              if (Array.isArray(plansData)) {
+                plansArray = plansData;
+              } else if (plansData.data && Array.isArray(plansData.data)) {
+                plansArray = plansData.data;
+              } else if (plansData.memberships && Array.isArray(plansData.memberships)) {
+                plansArray = plansData.memberships;
+              } else if (plansData.plans && Array.isArray(plansData.plans)) {
+                plansArray = plansData.plans;
+              } else {
+                const values = Object.values(plansData);
+                if (values.length > 0 && typeof values[0] === 'object') {
+                  plansArray = values as any[];
+                }
+              }
+              
+              console.log('Parsed plans array:', JSON.stringify(plansArray, null, 2));
+              
+              if (plansArray.length > 0) {
+                armemberPlans = plansArray.map((plan: any) => ({
+                  id: String(plan.arm_subscription_plan_id || plan.id || plan.plan_id),
+                  name: plan.arm_subscription_plan_name || plan.name || plan.plan_name || 'Unknown Plan',
+                  description: plan.arm_subscription_plan_description || plan.description,
+                }));
+              }
             }
+          } else {
+            const errorText = await plansResponse.text();
+            console.log('ARMember error response:', errorText);
           }
         } catch (planError) {
           console.log('ARMember plans not available:', planError);
