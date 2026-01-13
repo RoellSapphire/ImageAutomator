@@ -171,7 +171,10 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   }, [wordpressConfig, toast]);
 
   const handleProcessAndNext = useCallback(async () => {
-    if (currentStep === 2) {
+    if (currentStep === 1) {
+      onStepComplete(1);
+      onStepChange(2);
+    } else if (currentStep === 2) {
       onStepComplete(2);
       onStepChange(3);
     } else if (currentStep === 3) {
