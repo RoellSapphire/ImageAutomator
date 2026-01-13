@@ -775,17 +775,40 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
       if (wordpressConfig.armemberPlanId) {
         try {
-          await fetch(`${wordpressConfig.siteUrl}/wp-json/armember/v1/restrict`, {
+          // ARMember uses post meta to restrict content to specific plans
+          // The meta key format is arm_access_plan_{plan_id} with value '1'
+          const metaResponse = await fetch(`${wordpressConfig.siteUrl}/wp-json/wp/v2/posts/${post.id}`, {
             method: 'POST',
             headers: {
               'Authorization': `Basic ${auth}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              post_id: post.id,
-              plan_id: wordpressConfig.armemberPlanId,
+              meta: {
+                [`arm_access_plan_${wordpressConfig.armemberPlanId}`]: '1',
+                'arm_restrict_post': '1',
+              },
             }),
           });
+          
+          if (!metaResponse.ok) {
+            console.log('ARMember meta update failed, status:', metaResponse.status);
+            // Try alternative approach using WordPress meta endpoint
+            const altMetaResponse = await fetch(`${wordpressConfig.siteUrl}/wp-json/wp/v2/posts/${post.id}/meta`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                key: `arm_access_plan_${wordpressConfig.armemberPlanId}`,
+                value: '1',
+              }),
+            });
+            console.log('Alt meta response:', altMetaResponse.status);
+          } else {
+            console.log('ARMember restriction applied via post meta');
+          }
         } catch (restrictError) {
           console.log('ARMember restriction not set:', restrictError);
         }
