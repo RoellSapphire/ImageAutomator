@@ -8,7 +8,7 @@ import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
 import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage } from "@shared/schema";
-import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders } from "./google-drive";
+import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -458,10 +458,53 @@ export async function registerRoutes(
   // Google Drive endpoints
   app.get('/api/drive/status', async (req: Request, res: Response) => {
     try {
-      const isConnected = await checkDriveConnection();
-      res.json({ connected: isConnected });
+      const status = await checkDriveConnection();
+      res.json({ connected: status.connected, email: status.email });
     } catch (error) {
       res.json({ connected: false });
+    }
+  });
+
+  app.get('/api/drive/oauth/start', async (req: Request, res: Response) => {
+    try {
+      const authUrl = getAuthUrl();
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('OAuth start error:', error);
+      res.status(500).json({ message: 'Failed to start OAuth flow' });
+    }
+  });
+
+  app.get('/api/drive/oauth/callback', async (req: Request, res: Response) => {
+    try {
+      const code = req.query.code as string;
+      if (!code) {
+        return res.status(400).send('Authorization code missing');
+      }
+      await handleOAuthCallback(code);
+      res.send(`
+        <html>
+          <body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: white;">
+            <div style="text-align: center;">
+              <h1>Google Drive Connected!</h1>
+              <p>You can close this window and return to the app.</p>
+              <script>setTimeout(() => window.close(), 2000);</script>
+            </div>
+          </body>
+        </html>
+      `);
+    } catch (error) {
+      console.error('OAuth callback error:', error);
+      res.status(500).send('Failed to complete authorization');
+    }
+  });
+
+  app.post('/api/drive/disconnect', async (req: Request, res: Response) => {
+    try {
+      clearTokens();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to disconnect' });
     }
   });
 

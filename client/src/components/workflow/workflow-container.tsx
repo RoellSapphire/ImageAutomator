@@ -174,6 +174,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   }, []);
   
   const [isDriveConnected, setIsDriveConnected] = useState(false);
+  const [driveEmail, setDriveEmail] = useState<string | undefined>(undefined);
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
   const [isWpVerifying, setIsWpVerifying] = useState(false);
   const [isWpVerified, setIsWpVerified] = useState(false);
@@ -356,26 +357,35 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       const response = await fetch('/api/drive/status');
       const data = await response.json();
       setIsDriveConnected(data.connected);
+      setDriveEmail(data.email);
       if (data.connected) {
         toast({
           title: "Google Drive Connected",
-          description: "You can now export files to your Drive",
-        });
-      } else {
-        toast({
-          title: "Drive Not Connected",
-          description: "Please connect Google Drive in Replit settings",
-          variant: "destructive",
+          description: data.email ? `Connected as ${data.email}` : "You can now export files to your Drive",
         });
       }
     } catch (error) {
-      toast({
-        title: "Connection Check Failed",
-        description: "Could not verify Google Drive connection",
-        variant: "destructive",
-      });
+      console.error('Drive status check failed:', error);
     } finally {
       setIsConnectingDrive(false);
+    }
+  }, [toast]);
+
+  const handleDriveDisconnect = useCallback(async () => {
+    try {
+      await fetch('/api/drive/disconnect', { method: 'POST' });
+      setIsDriveConnected(false);
+      setDriveEmail(undefined);
+      toast({
+        title: "Disconnected",
+        description: "Google Drive has been disconnected",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to disconnect Google Drive",
+        variant: "destructive",
+      });
     }
   }, [toast]);
 
@@ -644,7 +654,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             config={driveConfig}
             onConfigChange={handleDriveConfigChange}
             isConnected={isDriveConnected}
-            onConnect={handleDriveConnect}
+            connectedEmail={driveEmail}
+            onRefreshStatus={handleDriveConnect}
+            onDisconnect={handleDriveDisconnect}
             workflowId={workflowId}
           />
         );

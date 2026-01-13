@@ -419,24 +419,23 @@ export function UploadStep({
                       <AlertCircle className="h-4 w-4 flex-shrink-0" />
                       <span>Google Drive not connected</span>
                     </div>
-                    {onConnectDrive && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onConnectDrive}
-                        disabled={isConnectingDrive}
-                        data-testid="button-connect-drive-auto"
-                      >
-                        {isConnectingDrive ? (
-                          <>
-                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                            Connecting...
-                          </>
-                        ) : (
-                          "Connect Drive"
-                        )}
-                      </Button>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const authWindow = window.open('/api/drive/oauth/start', '_blank');
+                        const checkInterval = setInterval(() => {
+                          if (authWindow?.closed) {
+                            clearInterval(checkInterval);
+                            onConnectDrive?.();
+                          }
+                        }, 1000);
+                        setTimeout(() => clearInterval(checkInterval), 300000);
+                      }}
+                      data-testid="button-connect-drive-auto"
+                    >
+                      Connect Drive
+                    </Button>
                   </div>
                 )}
                 {!autoModeSettings.skipExport && hasDriveConfig && (

@@ -21,10 +21,9 @@
     "quality": 90
   },
   "driveConfig": {
-    "folderPath": "/Civitai Images",
-    "createSubfolder": true,
-    "subfolderName": "neiewe",
-    "folderId": "1RecQ0JlcR9vmopRWODXBVXdRY_69SE9o"
+    "folderPath": "/",
+    "createSubfolder": false,
+    "subfolderName": "neiewe"
   },
   "wordpressConfig": {
     "siteUrl": "https://allure-alley.com/",

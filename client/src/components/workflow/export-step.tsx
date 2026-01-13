@@ -22,13 +22,15 @@ interface ExportStepProps {
   config: DriveConfig;
   onConfigChange: (config: DriveConfig) => void;
   isConnected: boolean;
-  onConnect: () => void;
+  connectedEmail?: string;
+  onRefreshStatus: () => void;
+  onDisconnect: () => void;
   workflowId: string | null;
 }
 
-export function ExportStep({ images, config, onConfigChange, isConnected, onConnect, workflowId }: ExportStepProps) {
+export function ExportStep({ images, config, onConfigChange, isConnected, connectedEmail, onRefreshStatus, onDisconnect, workflowId }: ExportStepProps) {
   const [localConfig, setLocalConfig] = useState<DriveConfig>(config);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [folders, setFolders] = useState<DriveFolder[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(false);
@@ -39,10 +41,23 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
     onConfigChange(localConfig);
   }, [localConfig, onConfigChange]);
 
-  const handleConnect = async () => {
-    setIsConnecting(true);
-    await onConnect();
-    setIsConnecting(false);
+  const handleConnectDrive = () => {
+    const authWindow = window.open('/api/drive/oauth/start', '_blank');
+    
+    const checkInterval = setInterval(() => {
+      if (authWindow?.closed) {
+        clearInterval(checkInterval);
+        onRefreshStatus();
+      }
+    }, 1000);
+    
+    setTimeout(() => clearInterval(checkInterval), 300000);
+  };
+
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    await onDisconnect();
+    setIsDisconnecting(false);
   };
 
   const handleDownloadZip = () => {
@@ -120,7 +135,7 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
               Google Drive Connection
             </CardTitle>
             <CardDescription>
-              Your Google Drive is connected via Replit
+              {isConnected ? `Connected as ${connectedEmail}` : "Connect your Google Drive to export files"}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -135,32 +150,45 @@ export function ExportStep({ images, config, onConfigChange, isConnected, onConn
                 </div>
                 <div>
                   <p className="font-medium text-sm">
-                    {isConnected ? "Connected" : "Checking..."}
+                    {isConnected ? "Connected" : "Not Connected"}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {isConnected 
-                      ? "Ready to export files" 
-                      : "Checking connection status"}
+                      ? connectedEmail || "Ready to export files"
+                      : "Click to connect your Google account"}
                   </p>
                 </div>
               </div>
-              <Button
-                variant={isConnected ? "outline" : "default"}
-                onClick={handleConnect}
-                disabled={isConnecting}
-                data-testid="button-connect-drive"
-              >
-                {isConnecting ? (
+              <div className="flex gap-2">
+                {isConnected ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Checking...
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onRefreshStatus}
+                      data-testid="button-refresh-drive"
+                    >
+                      Refresh
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDisconnect}
+                      disabled={isDisconnecting}
+                      data-testid="button-disconnect-drive"
+                    >
+                      {isDisconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
+                    </Button>
                   </>
-                ) : isConnected ? (
-                  "Refresh"
                 ) : (
-                  "Check Connection"
+                  <Button
+                    onClick={handleConnectDrive}
+                    data-testid="button-connect-drive"
+                  >
+                    Connect Google Drive
+                  </Button>
                 )}
-              </Button>
+              </div>
             </div>
 
             {isConnected && (
