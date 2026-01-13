@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { ChevronLeft, ChevronRight, Loader2, CheckCircle } from "lucide-react";
@@ -30,7 +30,9 @@ const DEFAULT_RENAME_CONFIG: RenameConfig = {
 };
 
 const DEFAULT_ENHANCE_CONFIG: EnhanceConfig = {
-  resize: true,
+  resize: false,
+  resizeMode: "scale",
+  scaleFactor: 100,
   width: 1920,
   height: 1080,
   maintainAspectRatio: true,
@@ -38,9 +40,44 @@ const DEFAULT_ENHANCE_CONFIG: EnhanceConfig = {
   addWatermark: false,
   watermarkText: "",
   watermarkPosition: "bottom-right",
+  watermarkImages: [],
   outputFormat: "original",
   quality: 90,
 };
+
+const STORAGE_KEY = "civitai-flow-settings";
+
+function loadSavedSettings() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error("Failed to load saved settings:", e);
+  }
+  return null;
+}
+
+function saveSettings(settings: {
+  renameConfig: RenameConfig;
+  enhanceConfig: EnhanceConfig;
+  driveConfig: DriveConfig;
+  wordpressConfig: Partial<WordPressConfig>;
+}) {
+  try {
+    const toSave = {
+      ...settings,
+      wordpressConfig: {
+        siteUrl: settings.wordpressConfig.siteUrl,
+        username: settings.wordpressConfig.username,
+      },
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+  } catch (e) {
+    console.error("Failed to save settings:", e);
+  }
+}
 
 const DEFAULT_DRIVE_CONFIG: DriveConfig = {
   folderPath: "/Civitai Images",
@@ -62,16 +99,34 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   
   const [workflowId, setWorkflowId] = useState<string | null>(null);
   const [images, setImages] = useState<ProcessedImage[]>([]);
-  const [renameConfig, setRenameConfig] = useState<RenameConfig>(DEFAULT_RENAME_CONFIG);
-  const [enhanceConfig, setEnhanceConfig] = useState<EnhanceConfig>(DEFAULT_ENHANCE_CONFIG);
-  const [driveConfig, setDriveConfig] = useState<DriveConfig>(DEFAULT_DRIVE_CONFIG);
-  const [wordpressConfig, setWordpressConfig] = useState<WordPressConfig>(DEFAULT_WORDPRESS_CONFIG);
+  const [renameConfig, setRenameConfig] = useState<RenameConfig>(() => {
+    const saved = loadSavedSettings();
+    return saved?.renameConfig || DEFAULT_RENAME_CONFIG;
+  });
+  const [enhanceConfig, setEnhanceConfig] = useState<EnhanceConfig>(() => {
+    const saved = loadSavedSettings();
+    return saved?.enhanceConfig ? { ...DEFAULT_ENHANCE_CONFIG, ...saved.enhanceConfig } : DEFAULT_ENHANCE_CONFIG;
+  });
+  const [driveConfig, setDriveConfig] = useState<DriveConfig>(() => {
+    const saved = loadSavedSettings();
+    return saved?.driveConfig || DEFAULT_DRIVE_CONFIG;
+  });
+  const [wordpressConfig, setWordpressConfig] = useState<WordPressConfig>(() => {
+    const saved = loadSavedSettings();
+    return saved?.wordpressConfig 
+      ? { ...DEFAULT_WORDPRESS_CONFIG, ...saved.wordpressConfig }
+      : DEFAULT_WORDPRESS_CONFIG;
+  });
   const [armemberPlans, setArmemberPlans] = useState<ARMemberPlan[]>([]);
   
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [isWpVerifying, setIsWpVerifying] = useState(false);
   const [isWpVerified, setIsWpVerified] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    saveSettings({ renameConfig, enhanceConfig, driveConfig, wordpressConfig });
+  }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig]);
 
   const handleUploadComplete = useCallback((uploadedImages: ProcessedImage[], id: string) => {
     setImages(uploadedImages);

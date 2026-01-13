@@ -77,7 +77,7 @@ export function PublishStep({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="username">WordPress Username</Label>
                 <Input
                   id="username"
                   placeholder="admin"
@@ -85,6 +85,9 @@ export function PublishStep({
                   onChange={(e) => setLocalConfig({ ...localConfig, username: e.target.value })}
                   data-testid="input-wp-username"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Your WordPress login username (the one you use to log into wp-admin)
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -286,7 +289,7 @@ export function PublishStep({
 
               {isVerified && localConfig.siteUrl && (
                 <Button 
-                  variant="link" 
+                  variant="ghost" 
                   className="w-full mt-4 text-xs" 
                   asChild
                 >

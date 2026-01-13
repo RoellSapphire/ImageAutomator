@@ -4,6 +4,7 @@ export type {
   ProcessedImage,
   RenameConfig,
   EnhanceConfig,
+  WatermarkImage,
   WordPressConfig,
   DriveConfig,
   WorkflowState,

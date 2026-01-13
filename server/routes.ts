@@ -7,14 +7,15 @@ import sharp from "sharp";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
-import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig } from "@shared/schema";
-import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive } from "./google-drive";
+import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage } from "@shared/schema";
+import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders } from "./google-drive";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
 const THUMBNAILS_DIR = path.join(process.cwd(), "thumbnails");
+const WATERMARKS_DIR = path.join(process.cwd(), "watermarks");
 
-[UPLOAD_DIR, PROCESSED_DIR, THUMBNAILS_DIR].forEach(dir => {
+[UPLOAD_DIR, PROCESSED_DIR, THUMBNAILS_DIR, WATERMARKS_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -40,6 +41,19 @@ const uploadImages = multer({
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (IMAGE_EXTENSIONS.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(null, false);
+    }
+  }
+});
+
+const uploadWatermarks = multer({
+  dest: WATERMARKS_DIR,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.png', '.webp', '.gif'].includes(ext)) {
       cb(null, true);
     } else {
       cb(null, false);
@@ -245,70 +259,90 @@ export async function registerRoutes(
           const processedPath = path.join(processedDir, newName);
 
           let sharpInstance = sharp(image.originalPath);
+          const metadata = await sharp(image.originalPath).metadata();
+          const originalWidth = metadata.width || 800;
+          const originalHeight = metadata.height || 600;
 
-          if (enhanceConfig.resize && (enhanceConfig.width || enhanceConfig.height)) {
-            sharpInstance = sharpInstance.resize({
-              width: enhanceConfig.width,
-              height: enhanceConfig.height,
-              fit: enhanceConfig.maintainAspectRatio ? 'inside' : 'fill',
-            });
+          if (enhanceConfig.resize) {
+            const resizeMode = enhanceConfig.resizeMode || "scale";
+            
+            if (resizeMode === "scale" && enhanceConfig.scaleFactor) {
+              const scale = enhanceConfig.scaleFactor / 100;
+              const newWidth = Math.round(originalWidth * scale);
+              const newHeight = Math.round(originalHeight * scale);
+              sharpInstance = sharpInstance.resize({
+                width: newWidth,
+                height: newHeight,
+                fit: 'fill',
+              });
+            } else if (resizeMode === "dimensions" && (enhanceConfig.width || enhanceConfig.height)) {
+              sharpInstance = sharpInstance.resize({
+                width: enhanceConfig.width,
+                height: enhanceConfig.height,
+                fit: enhanceConfig.maintainAspectRatio ? 'inside' : 'fill',
+              });
+            }
           }
 
           if (enhanceConfig.removeExif) {
             sharpInstance = sharpInstance.rotate();
           }
 
-          if (enhanceConfig.addWatermark && enhanceConfig.watermarkText) {
-            const metadata = await sharp(image.originalPath).metadata();
-            const width = metadata.width || 800;
-            const height = metadata.height || 600;
-            
-            const fontSize = Math.max(16, Math.floor(width / 30));
-            const padding = 20;
-            
-            let x = padding;
-            let y = padding + fontSize;
-            
-            switch (enhanceConfig.watermarkPosition) {
-              case 'top-right':
-                x = width - padding;
-                break;
-              case 'bottom-left':
-                y = height - padding;
-                break;
-              case 'bottom-right':
-                x = width - padding;
-                y = height - padding;
-                break;
-              case 'center':
-                x = width / 2;
-                y = height / 2;
-                break;
+          if (enhanceConfig.addWatermark) {
+            const compositeInputs: { input: Buffer; gravity?: string; top?: number; left?: number; tile?: boolean }[] = [];
+
+            for (const watermark of (enhanceConfig.watermarkImages || [])) {
+              if (!fs.existsSync(watermark.path)) continue;
+
+              try {
+                const watermarkImage = sharp(watermark.path);
+                const watermarkMeta = await watermarkImage.metadata();
+                const watermarkWidth = watermarkMeta.width || 100;
+                const watermarkHeight = watermarkMeta.height || 100;
+
+                const scaledWidth = Math.round((originalWidth * watermark.scale) / 100);
+                const scaledHeight = Math.round((watermarkHeight / watermarkWidth) * scaledWidth);
+
+                let watermarkBuffer = await watermarkImage
+                  .resize(scaledWidth, scaledHeight)
+                  .ensureAlpha()
+                  .modulate({ brightness: 1 })
+                  .composite([{
+                    input: Buffer.from([0, 0, 0, Math.round(255 * (watermark.opacity / 100))]),
+                    raw: { width: 1, height: 1, channels: 4 },
+                    tile: true,
+                    blend: 'dest-in'
+                  }])
+                  .toBuffer();
+
+                if (watermark.position === "tile") {
+                  compositeInputs.push({
+                    input: watermarkBuffer,
+                    tile: true,
+                  });
+                } else {
+                  let gravity: string;
+                  switch (watermark.position) {
+                    case "top-left": gravity = "northwest"; break;
+                    case "top-right": gravity = "northeast"; break;
+                    case "bottom-left": gravity = "southwest"; break;
+                    case "bottom-right": gravity = "southeast"; break;
+                    case "center": gravity = "center"; break;
+                    default: gravity = "southeast";
+                  }
+                  compositeInputs.push({
+                    input: watermarkBuffer,
+                    gravity,
+                  });
+                }
+              } catch (watermarkError) {
+                console.error('Error applying watermark:', watermarkError);
+              }
             }
 
-            const textAlign = enhanceConfig.watermarkPosition.includes('right') ? 'end' : 
-                             enhanceConfig.watermarkPosition === 'center' ? 'middle' : 'start';
-
-            const watermarkSvg = `
-              <svg width="${width}" height="${height}">
-                <text 
-                  x="${x}" 
-                  y="${y}" 
-                  font-family="Arial, sans-serif" 
-                  font-size="${fontSize}" 
-                  fill="rgba(255,255,255,0.7)"
-                  text-anchor="${textAlign}"
-                  dominant-baseline="${enhanceConfig.watermarkPosition.includes('bottom') ? 'text-after-edge' : 'hanging'}"
-                >
-                  ${enhanceConfig.watermarkText}
-                </text>
-              </svg>
-            `;
-
-            sharpInstance = sharpInstance.composite([{
-              input: Buffer.from(watermarkSvg),
-              blend: 'over',
-            }]);
+            if (compositeInputs.length > 0) {
+              sharpInstance = sharpInstance.composite(compositeInputs as any);
+            }
           }
 
           switch (enhanceConfig.outputFormat) {
@@ -683,6 +717,71 @@ ${mediaIds.map(id => `<!-- wp:image {"id":${id}} --><figure class="wp-block-imag
       res.json(workflow);
     } catch (error) {
       res.status(500).json({ message: 'Error fetching workflow' });
+    }
+  });
+
+  app.post('/api/watermarks/upload', uploadWatermarks.array('watermarks', 3), async (req: Request, res: Response) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: 'No watermark files uploaded' });
+      }
+
+      const watermarks: WatermarkImage[] = [];
+
+      for (const file of files) {
+        const watermarkId = randomUUID();
+        const ext = path.extname(file.originalname).toLowerCase();
+        const newPath = path.join(WATERMARKS_DIR, `${watermarkId}${ext}`);
+        
+        fs.renameSync(file.path, newPath);
+
+        watermarks.push({
+          id: watermarkId,
+          name: file.originalname,
+          path: newPath,
+          opacity: 50,
+          position: "bottom-right",
+          scale: 20,
+        });
+      }
+
+      res.json({ watermarks });
+    } catch (error) {
+      console.error('Watermark upload error:', error);
+      res.status(500).json({ message: 'Failed to upload watermarks' });
+    }
+  });
+
+  app.get('/api/watermarks/:watermarkId', async (req: Request, res: Response) => {
+    try {
+      const { watermarkId } = req.params;
+      const possiblePaths = [
+        path.join(WATERMARKS_DIR, `${watermarkId}.png`),
+        path.join(WATERMARKS_DIR, `${watermarkId}.webp`),
+        path.join(WATERMARKS_DIR, `${watermarkId}.gif`),
+      ];
+      
+      for (const watermarkPath of possiblePaths) {
+        if (fs.existsSync(watermarkPath)) {
+          return res.sendFile(watermarkPath);
+        }
+      }
+      
+      res.status(404).json({ message: 'Watermark not found' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error serving watermark' });
+    }
+  });
+
+  app.get('/api/drive/folders', async (req: Request, res: Response) => {
+    try {
+      const parentId = req.query.parentId as string | undefined;
+      const folders = await listFolders(parentId);
+      res.json({ folders });
+    } catch (error) {
+      console.error('Drive folders error:', error);
+      res.status(500).json({ message: 'Failed to list folders', folders: [] });
     }
   });
 

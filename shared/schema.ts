@@ -51,9 +51,23 @@ export const renameConfigSchema = z.object({
 
 export type RenameConfig = z.infer<typeof renameConfigSchema>;
 
+// Watermark Image Configuration
+export const watermarkImageSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+  opacity: z.number().min(0).max(100).default(50),
+  position: z.enum(["top-left", "top-right", "bottom-left", "bottom-right", "center", "tile"]).default("bottom-right"),
+  scale: z.number().min(5).max(100).default(20),
+});
+
+export type WatermarkImage = z.infer<typeof watermarkImageSchema>;
+
 // Enhancement Configuration  
 export const enhanceConfigSchema = z.object({
-  resize: z.boolean().default(true),
+  resize: z.boolean().default(false),
+  resizeMode: z.enum(["scale", "dimensions"]).default("scale"),
+  scaleFactor: z.number().min(10).max(500).default(100),
   width: z.number().min(1).max(10000).optional(),
   height: z.number().min(1).max(10000).optional(),
   maintainAspectRatio: z.boolean().default(true),
@@ -61,6 +75,7 @@ export const enhanceConfigSchema = z.object({
   addWatermark: z.boolean().default(false),
   watermarkText: z.string().optional(),
   watermarkPosition: z.enum(["top-left", "top-right", "bottom-left", "bottom-right", "center"]).default("bottom-right"),
+  watermarkImages: z.array(watermarkImageSchema).default([]),
   outputFormat: z.enum(["original", "jpeg", "png", "webp"]).default("original"),
   quality: z.number().min(1).max(100).default(90),
 });
