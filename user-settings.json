@@ -1,0 +1,33 @@
+{
+  "renameConfig": {
+    "prefix": "civitai",
+    "startNumber": 1,
+    "padding": 3,
+    "separator": "_"
+  },
+  "enhanceConfig": {
+    "resize": false,
+    "resizeMode": "scale",
+    "scaleFactor": 100,
+    "width": 1920,
+    "height": 1080,
+    "maintainAspectRatio": true,
+    "removeExif": true,
+    "addWatermark": false,
+    "watermarkText": "",
+    "watermarkPosition": "bottom-right",
+    "watermarkImages": [],
+    "outputFormat": "original",
+    "quality": 90
+  },
+  "driveConfig": {
+    "folderPath": "/Civitai Images",
+    "createSubfolder": false,
+    "subfolderName": ""
+  },
+  "wordpressConfig": {
+    "siteUrl": "",
+    "username": "",
+    "applicationPassword": ""
+  }
+}

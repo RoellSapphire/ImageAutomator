@@ -45,21 +45,24 @@ const DEFAULT_ENHANCE_CONFIG: EnhanceConfig = {
   quality: 90,
 };
 
-const STORAGE_KEY = "civitai-flow-settings";
-
-function loadSavedSettings() {
+async function loadServerSettings(): Promise<{
+  renameConfig?: RenameConfig;
+  enhanceConfig?: EnhanceConfig;
+  driveConfig?: DriveConfig;
+  wordpressConfig?: Partial<WordPressConfig>;
+} | null> {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
+    const response = await fetch('/api/settings');
+    if (response.ok) {
+      return await response.json();
     }
   } catch (e) {
-    console.error("Failed to load saved settings:", e);
+    console.error("Failed to load settings from server:", e);
   }
   return null;
 }
 
-function saveSettings(settings: {
+async function saveServerSettings(settings: {
   renameConfig: RenameConfig;
   enhanceConfig: EnhanceConfig;
   driveConfig: DriveConfig;
@@ -75,9 +78,13 @@ function saveSettings(settings: {
         armemberApiKey: settings.wordpressConfig.armemberApiKey,
       },
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(toSave),
+    });
   } catch (e) {
-    console.error("Failed to save settings:", e);
+    console.error("Failed to save settings to server:", e);
   }
 }
 
@@ -101,25 +108,24 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   
   const [workflowId, setWorkflowId] = useState<string | null>(null);
   const [images, setImages] = useState<ProcessedImage[]>([]);
-  const [renameConfig, setRenameConfig] = useState<RenameConfig>(() => {
-    const saved = loadSavedSettings();
-    return saved?.renameConfig || DEFAULT_RENAME_CONFIG;
-  });
-  const [enhanceConfig, setEnhanceConfig] = useState<EnhanceConfig>(() => {
-    const saved = loadSavedSettings();
-    return saved?.enhanceConfig ? { ...DEFAULT_ENHANCE_CONFIG, ...saved.enhanceConfig } : DEFAULT_ENHANCE_CONFIG;
-  });
-  const [driveConfig, setDriveConfig] = useState<DriveConfig>(() => {
-    const saved = loadSavedSettings();
-    return saved?.driveConfig || DEFAULT_DRIVE_CONFIG;
-  });
-  const [wordpressConfig, setWordpressConfig] = useState<WordPressConfig>(() => {
-    const saved = loadSavedSettings();
-    return saved?.wordpressConfig 
-      ? { ...DEFAULT_WORDPRESS_CONFIG, ...saved.wordpressConfig }
-      : DEFAULT_WORDPRESS_CONFIG;
-  });
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [renameConfig, setRenameConfig] = useState<RenameConfig>(DEFAULT_RENAME_CONFIG);
+  const [enhanceConfig, setEnhanceConfig] = useState<EnhanceConfig>(DEFAULT_ENHANCE_CONFIG);
+  const [driveConfig, setDriveConfig] = useState<DriveConfig>(DEFAULT_DRIVE_CONFIG);
+  const [wordpressConfig, setWordpressConfig] = useState<WordPressConfig>(DEFAULT_WORDPRESS_CONFIG);
   const [armemberPlans, setArmemberPlans] = useState<ARMemberPlan[]>([]);
+
+  useEffect(() => {
+    loadServerSettings().then((saved) => {
+      if (saved) {
+        if (saved.renameConfig) setRenameConfig(saved.renameConfig);
+        if (saved.enhanceConfig) setEnhanceConfig({ ...DEFAULT_ENHANCE_CONFIG, ...saved.enhanceConfig });
+        if (saved.driveConfig) setDriveConfig(saved.driveConfig);
+        if (saved.wordpressConfig) setWordpressConfig({ ...DEFAULT_WORDPRESS_CONFIG, ...saved.wordpressConfig });
+      }
+      setSettingsLoaded(true);
+    });
+  }, []);
   
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [isWpVerifying, setIsWpVerifying] = useState(false);
@@ -127,8 +133,10 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    saveSettings({ renameConfig, enhanceConfig, driveConfig, wordpressConfig });
-  }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig]);
+    if (settingsLoaded) {
+      saveServerSettings({ renameConfig, enhanceConfig, driveConfig, wordpressConfig });
+    }
+  }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, settingsLoaded]);
 
   const handleUploadComplete = useCallback((uploadedImages: ProcessedImage[], id: string) => {
     setImages(uploadedImages);

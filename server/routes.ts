@@ -91,6 +91,27 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  app.get('/api/settings', async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getUserSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      res.status(500).json({ message: 'Failed to load settings' });
+    }
+  });
+
+  app.post('/api/settings', async (req: Request, res: Response) => {
+    try {
+      const settings = req.body;
+      await storage.saveUserSettings(settings);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      res.status(500).json({ message: 'Failed to save settings' });
+    }
+  });
+
   app.post('/api/upload', upload.single('file'), async (req: Request, res: Response) => {
     try {
       if (!req.file) {

@@ -1,5 +1,14 @@
-import { type User, type InsertUser, type WorkflowState, type ProcessedImage } from "@shared/schema";
+import { type User, type InsertUser, type WorkflowState, type ProcessedImage, type RenameConfig, type EnhanceConfig, type DriveConfig, type WordPressConfig } from "@shared/schema";
 import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as path from "path";
+
+export interface UserSettings {
+  renameConfig?: RenameConfig;
+  enhanceConfig?: EnhanceConfig;
+  driveConfig?: DriveConfig;
+  wordpressConfig?: Partial<WordPressConfig>;
+}
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -12,7 +21,12 @@ export interface IStorage {
   addImages(workflowId: string, images: ProcessedImage[]): Promise<void>;
   updateImages(workflowId: string, images: ProcessedImage[]): Promise<void>;
   deleteWorkflow(id: string): Promise<void>;
+  
+  getUserSettings(): Promise<UserSettings>;
+  saveUserSettings(settings: UserSettings): Promise<void>;
 }
+
+const SETTINGS_FILE = path.join(process.cwd(), "user-settings.json");
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
@@ -21,6 +35,26 @@ export class MemStorage implements IStorage {
   constructor() {
     this.users = new Map();
     this.workflows = new Map();
+  }
+
+  async getUserSettings(): Promise<UserSettings> {
+    try {
+      if (fs.existsSync(SETTINGS_FILE)) {
+        const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.error("Failed to load user settings:", e);
+    }
+    return {};
+  }
+
+  async saveUserSettings(settings: UserSettings): Promise<void> {
+    try {
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    } catch (e) {
+      console.error("Failed to save user settings:", e);
+    }
   }
 
   async getUser(id: string): Promise<User | undefined> {
