@@ -1,14 +1,14 @@
 {
   "renameConfig": {
-    "prefix": "civitai",
+    "prefix": "teste",
     "startNumber": 1,
-    "padding": 3,
-    "separator": "_"
+    "padding": 4,
+    "separator": "-"
   },
   "enhanceConfig": {
-    "resize": false,
+    "resize": true,
     "resizeMode": "scale",
-    "scaleFactor": 100,
+    "scaleFactor": 200,
     "width": 1920,
     "height": 1080,
     "maintainAspectRatio": true,
@@ -22,12 +22,14 @@
   },
   "driveConfig": {
     "folderPath": "/Civitai Images",
-    "createSubfolder": false,
-    "subfolderName": ""
+    "createSubfolder": true,
+    "subfolderName": "neiewe",
+    "folderId": "1RecQ0JlcR9vmopRWODXBVXdRY_69SE9o"
   },
   "wordpressConfig": {
-    "siteUrl": "",
-    "username": "",
-    "applicationPassword": ""
+    "siteUrl": "https://allure-alley.com/",
+    "username": "allure-alley",
+    "applicationPassword": "nvdp aRf7 QFy8 y065 SDTJ dtjY",
+    "armemberApiKey": "vw8VKY6vuMawvaFlw8T6VEbO2E9adm"
   }
 }
