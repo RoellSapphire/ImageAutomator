@@ -21,9 +21,10 @@
     "quality": 90
   },
   "driveConfig": {
-    "folderPath": "/",
-    "createSubfolder": false,
-    "subfolderName": "neiewe"
+    "folderPath": "/Posted/_posted/SubscribersPassionate",
+    "createSubfolder": true,
+    "subfolderName": "UnderConstruction",
+    "folderId": "1tBJs2F1EQOWaNR4oerLQXJ7-NGpIabez"
   },
   "wordpressConfig": {
     "siteUrl": "https://allure-alley.com/",
@@ -34,7 +35,7 @@
   "autoModeSettings": {
     "enabled": true,
     "autoTitle": true,
-    "selectedTemplateId": "3",
+    "selectedTemplateId": "4",
     "skipExport": false,
     "skipPublish": false
   },
