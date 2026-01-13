@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, FileArchive, FolderOpen, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProcessedImage } from "@/lib/types";
 
@@ -19,8 +19,8 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [uploadType, setUploadType] = useState<"zip" | "folder">("zip");
-  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [uploadType, setUploadType] = useState<"zip" | "images">("zip");
+  const imagesInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -52,10 +52,10 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
     }
   }, []);
 
-  const handleFolderInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImagesInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      handleFolderFiles(Array.from(files));
+      handleImageFiles(Array.from(files));
     }
   }, []);
 
@@ -108,7 +108,7 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
     }
   };
 
-  const handleFolderFiles = async (files: File[]) => {
+  const handleImageFiles = async (files: File[]) => {
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'];
     const imageFiles = files.filter(file => {
       const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
@@ -172,7 +172,7 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
       const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'];
       const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
       if (imageExtensions.includes(ext)) {
-        handleFolderFiles([file]);
+        handleImageFiles([file]);
       } else {
         setError("Please upload a ZIP file or image files");
       }
@@ -186,7 +186,7 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Upload Images</h2>
         <p className="text-muted-foreground mt-1">
-          Upload images from a ZIP file or folder to get started
+          Upload images from a ZIP file or select individual image files
         </p>
       </div>
 
@@ -194,19 +194,19 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
         <CardHeader>
           <CardTitle className="text-lg">File Upload</CardTitle>
           <CardDescription>
-            Choose to upload a ZIP file or select a folder with images
+            Choose to upload a ZIP file or select image files
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Tabs value={uploadType} onValueChange={(v) => setUploadType(v as "zip" | "folder")}>
+          <Tabs value={uploadType} onValueChange={(v) => setUploadType(v as "zip" | "images")}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="zip" className="flex items-center gap-2" data-testid="tab-zip-upload">
                 <FileArchive className="h-4 w-4" />
                 ZIP File
               </TabsTrigger>
-              <TabsTrigger value="folder" className="flex items-center gap-2" data-testid="tab-folder-upload">
-                <FolderOpen className="h-4 w-4" />
-                Folder
+              <TabsTrigger value="images" className="flex items-center gap-2" data-testid="tab-images-upload">
+                <Images className="h-4 w-4" />
+                Select Images
               </TabsTrigger>
             </TabsList>
 
@@ -284,7 +284,7 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
               </div>
             </TabsContent>
 
-            <TabsContent value="folder" className="mt-4">
+            <TabsContent value="images" className="mt-4">
               <div
                 className={cn(
                   "relative border-2 border-dashed rounded-lg p-12 transition-colors",
@@ -292,7 +292,7 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
                   !hasImages && "border-muted-foreground/25 hover:border-muted-foreground/50",
                   hasImages && "border-green-500/50 bg-green-500/5"
                 )}
-                data-testid="upload-dropzone-folder"
+                data-testid="upload-dropzone-images"
               >
                 {isUploading ? (
                   <>
@@ -316,20 +316,20 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
                     </div>
                     <Button
                       variant="outline"
-                      onClick={() => folderInputRef.current?.click()}
-                      data-testid="button-upload-new-folder"
+                      onClick={() => imagesInputRef.current?.click()}
+                      data-testid="button-upload-new-images"
                     >
-                      Upload Different Folder
+                      Select Different Images
                     </Button>
                   </>
                 ) : (
                   <>
                     <div className="p-4 rounded-full bg-muted">
-                      <FolderOpen className="h-10 w-10 text-muted-foreground" />
+                      <Images className="h-10 w-10 text-muted-foreground" />
                     </div>
                     <div>
                       <p className="text-sm font-medium">
-                        Select a folder containing images
+                        Click to select image files
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
                         Supports JPG, PNG, WebP, GIF, BMP, TIFF images
@@ -337,10 +337,10 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
                     </div>
                     <Button
                       variant="outline"
-                      onClick={() => folderInputRef.current?.click()}
-                      data-testid="button-browse-folder"
+                      onClick={() => imagesInputRef.current?.click()}
+                      data-testid="button-browse-images"
                     >
-                      Browse Folder
+                      Select Images
                     </Button>
                   </>
                 )}
@@ -357,13 +357,13 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
             data-testid="input-file-upload"
           />
           <input
-            ref={folderInputRef}
+            ref={imagesInputRef}
             type="file"
+            accept="image/*"
             className="hidden"
-            onChange={handleFolderInput}
+            onChange={handleImagesInput}
             multiple
-            {...{ webkitdirectory: "", directory: "" } as any}
-            data-testid="input-folder-upload"
+            data-testid="input-images-upload"
           />
 
           {error && (
