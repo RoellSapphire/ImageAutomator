@@ -20,6 +20,8 @@ const THUMBNAILS_DIR = path.join(process.cwd(), "thumbnails");
   }
 });
 
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'];
+
 const upload = multer({
   dest: UPLOAD_DIR,
   limits: { fileSize: 500 * 1024 * 1024 },
@@ -32,7 +34,18 @@ const upload = multer({
   }
 });
 
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'];
+const uploadImages = multer({
+  dest: UPLOAD_DIR,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (IMAGE_EXTENSIONS.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(null, false);
+    }
+  }
+});
 
 function isImageFile(filename: string): boolean {
   const ext = path.extname(filename).toLowerCase();
@@ -128,6 +141,62 @@ export async function registerRoutes(
     } catch (error) {
       console.error('Upload error:', error);
       res.status(500).json({ message: 'Failed to process ZIP file' });
+    }
+  });
+
+  app.post('/api/upload-folder', uploadImages.array('files', 100), async (req: Request, res: Response) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: 'No image files uploaded' });
+      }
+
+      const workflow = await storage.createWorkflow();
+      const workflowDir = path.join(UPLOAD_DIR, workflow.id);
+      fs.mkdirSync(workflowDir, { recursive: true });
+
+      const images: ProcessedImage[] = [];
+
+      for (const file of files) {
+        const filename = file.originalname;
+        if (!isImageFile(filename)) continue;
+
+        const imageId = randomUUID();
+        const originalPath = path.join(workflowDir, `${imageId}_${filename}`);
+        const thumbnailPath = path.join(THUMBNAILS_DIR, `${imageId}.jpg`);
+
+        fs.renameSync(file.path, originalPath);
+
+        await createThumbnail(originalPath, thumbnailPath);
+        const dimensions = await getImageDimensions(originalPath);
+        const stats = fs.statSync(originalPath);
+
+        images.push({
+          id: imageId,
+          originalName: filename,
+          newName: filename,
+          originalPath: originalPath,
+          thumbnailPath: thumbnailPath,
+          originalSize: stats.size,
+          width: dimensions?.width,
+          height: dimensions?.height,
+          format: path.extname(filename).slice(1).toLowerCase(),
+          status: "pending",
+        });
+      }
+
+      await storage.addImages(workflow.id, images);
+      await storage.updateWorkflow(workflow.id, { uploadedZipName: `${images.length} files from folder` });
+
+      res.json({
+        workflowId: workflow.id,
+        images,
+        message: `Uploaded ${images.length} images from folder`,
+      });
+
+    } catch (error) {
+      console.error('Folder upload error:', error);
+      res.status(500).json({ message: 'Failed to process uploaded files' });
     }
   });
 

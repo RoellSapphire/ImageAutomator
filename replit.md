@@ -35,7 +35,7 @@ A workflow automation app for processing Civitai images. The app automates the p
 - `shared/schema.ts` - Type definitions and schemas
 
 ## Workflow Steps
-1. **Upload** - Upload ZIP file from Civitai, extracts images
+1. **Upload** - Upload ZIP file or folder with images
 2. **Rename** - Configure naming pattern (prefix + sequence number)
 3. **Enhance** - Resize, remove EXIF, add watermark, change format
 4. **Export** - Save to Google Drive folder
@@ -43,6 +43,7 @@ A workflow automation app for processing Civitai images. The app automates the p
 
 ## API Endpoints
 - `POST /api/upload` - Upload and extract ZIP file
+- `POST /api/upload-folder` - Upload multiple image files from folder
 - `GET /api/thumbnail/:imageId` - Get image thumbnail
 - `POST /api/process` - Process images (rename, enhance)
 - `GET /api/download/:workflowId` - Download processed images as ZIP

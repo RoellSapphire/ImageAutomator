@@ -1,8 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Upload, FileArchive, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Upload, FileArchive, FolderOpen, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProcessedImage } from "@/lib/types";
 
@@ -18,6 +19,8 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [uploadType, setUploadType] = useState<"zip" | "folder">("zip");
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -45,11 +48,18 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      handleFile(files[0]);
+      handleZipFile(files[0]);
     }
   }, []);
 
-  const handleFile = async (file: File) => {
+  const handleFolderInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFolderFiles(Array.from(files));
+    }
+  }, []);
+
+  const handleZipFile = async (file: File) => {
     if (!file.name.endsWith('.zip')) {
       setError("Please upload a ZIP file");
       return;
@@ -98,14 +108,85 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
     }
   };
 
+  const handleFolderFiles = async (files: File[]) => {
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'];
+    const imageFiles = files.filter(file => {
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+      return imageExtensions.includes(ext);
+    });
+
+    if (imageFiles.length === 0) {
+      setError("No image files found in folder");
+      return;
+    }
+
+    setFileName(`${imageFiles.length} image files`);
+    setError(null);
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    const formData = new FormData();
+    imageFiles.forEach(file => {
+      formData.append('files', file);
+    });
+
+    try {
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          setIsUploading(false);
+          setUploadProgress(100);
+          onUploadComplete(response.images, response.workflowId);
+        } else {
+          setError("Upload failed. Please try again.");
+          setIsUploading(false);
+        }
+      };
+
+      xhr.onerror = () => {
+        setError("Network error. Please try again.");
+        setIsUploading(false);
+      };
+
+      xhr.open('POST', '/api/upload-folder');
+      xhr.send(formData);
+    } catch (err) {
+      setError("Upload failed. Please try again.");
+      setIsUploading(false);
+    }
+  };
+
+  const handleFile = async (file: File) => {
+    if (file.name.endsWith('.zip')) {
+      handleZipFile(file);
+    } else {
+      const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'];
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+      if (imageExtensions.includes(ext)) {
+        handleFolderFiles([file]);
+      } else {
+        setError("Please upload a ZIP file or image files");
+      }
+    }
+  };
+
   const hasImages = uploadedImages.length > 0;
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Upload ZIP File</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Upload Images</h2>
         <p className="text-muted-foreground mt-1">
-          Upload a ZIP file containing images from Civitai to get started
+          Upload images from a ZIP file or folder to get started
         </p>
       </div>
 
@@ -113,90 +194,177 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
         <CardHeader>
           <CardTitle className="text-lg">File Upload</CardTitle>
           <CardDescription>
-            Drag and drop your ZIP file or click to browse
+            Choose to upload a ZIP file or select a folder with images
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={cn(
-              "relative border-2 border-dashed rounded-lg p-12 transition-colors",
-              "flex flex-col items-center justify-center gap-4 text-center",
-              isDragging && "border-primary bg-primary/5",
-              !isDragging && !hasImages && "border-muted-foreground/25 hover:border-muted-foreground/50",
-              hasImages && "border-green-500/50 bg-green-500/5"
-            )}
-            data-testid="upload-dropzone"
-          >
-            {isUploading ? (
-              <>
-                <Loader2 className="h-12 w-12 text-primary animate-spin" />
-                <div className="space-y-2 w-full max-w-xs">
-                  <p className="text-sm font-medium">Uploading {fileName}...</p>
-                  <Progress value={uploadProgress} className="h-2" />
-                  <p className="text-xs text-muted-foreground">{uploadProgress}%</p>
-                </div>
-              </>
-            ) : hasImages ? (
-              <>
-                <CheckCircle className="h-12 w-12 text-green-500" />
-                <div>
-                  <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                    {uploadedImages.length} images extracted successfully
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    From: {fileName}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => document.getElementById('file-input')?.click()}
-                  data-testid="button-upload-new"
-                >
-                  Upload Different File
-                </Button>
-              </>
-            ) : (
-              <>
-                <div className={cn(
-                  "p-4 rounded-full",
-                  isDragging ? "bg-primary/10" : "bg-muted"
-                )}>
-                  {isDragging ? (
-                    <FileArchive className="h-10 w-10 text-primary" />
-                  ) : (
-                    <Upload className="h-10 w-10 text-muted-foreground" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-medium">
-                    {isDragging ? "Drop your ZIP file here" : "Drop ZIP file here or click to browse"}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Supports .zip files containing images
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => document.getElementById('file-input')?.click()}
-                  data-testid="button-browse-files"
-                >
-                  Browse Files
-                </Button>
-              </>
-            )}
+        <CardContent className="space-y-4">
+          <Tabs value={uploadType} onValueChange={(v) => setUploadType(v as "zip" | "folder")}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="zip" className="flex items-center gap-2" data-testid="tab-zip-upload">
+                <FileArchive className="h-4 w-4" />
+                ZIP File
+              </TabsTrigger>
+              <TabsTrigger value="folder" className="flex items-center gap-2" data-testid="tab-folder-upload">
+                <FolderOpen className="h-4 w-4" />
+                Folder
+              </TabsTrigger>
+            </TabsList>
 
-            <input
-              id="file-input"
-              type="file"
-              accept=".zip"
-              className="hidden"
-              onChange={handleFileInput}
-              data-testid="input-file-upload"
-            />
-          </div>
+            <TabsContent value="zip" className="mt-4">
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={cn(
+                  "relative border-2 border-dashed rounded-lg p-12 transition-colors",
+                  "flex flex-col items-center justify-center gap-4 text-center",
+                  isDragging && "border-primary bg-primary/5",
+                  !isDragging && !hasImages && "border-muted-foreground/25 hover:border-muted-foreground/50",
+                  hasImages && "border-green-500/50 bg-green-500/5"
+                )}
+                data-testid="upload-dropzone-zip"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="h-12 w-12 text-primary animate-spin" />
+                    <div className="space-y-2 w-full max-w-xs">
+                      <p className="text-sm font-medium">Uploading {fileName}...</p>
+                      <Progress value={uploadProgress} className="h-2" />
+                      <p className="text-xs text-muted-foreground">{uploadProgress}%</p>
+                    </div>
+                  </>
+                ) : hasImages ? (
+                  <>
+                    <CheckCircle className="h-12 w-12 text-green-500" />
+                    <div>
+                      <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                        {uploadedImages.length} images uploaded successfully
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        From: {fileName}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => document.getElementById('file-input')?.click()}
+                      data-testid="button-upload-new-zip"
+                    >
+                      Upload Different File
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className={cn(
+                      "p-4 rounded-full",
+                      isDragging ? "bg-primary/10" : "bg-muted"
+                    )}>
+                      {isDragging ? (
+                        <FileArchive className="h-10 w-10 text-primary" />
+                      ) : (
+                        <Upload className="h-10 w-10 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">
+                        {isDragging ? "Drop your ZIP file here" : "Drop ZIP file here or click to browse"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Supports .zip files containing images
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => document.getElementById('file-input')?.click()}
+                      data-testid="button-browse-zip"
+                    >
+                      Browse Files
+                    </Button>
+                  </>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="folder" className="mt-4">
+              <div
+                className={cn(
+                  "relative border-2 border-dashed rounded-lg p-12 transition-colors",
+                  "flex flex-col items-center justify-center gap-4 text-center",
+                  !hasImages && "border-muted-foreground/25 hover:border-muted-foreground/50",
+                  hasImages && "border-green-500/50 bg-green-500/5"
+                )}
+                data-testid="upload-dropzone-folder"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="h-12 w-12 text-primary animate-spin" />
+                    <div className="space-y-2 w-full max-w-xs">
+                      <p className="text-sm font-medium">Uploading {fileName}...</p>
+                      <Progress value={uploadProgress} className="h-2" />
+                      <p className="text-xs text-muted-foreground">{uploadProgress}%</p>
+                    </div>
+                  </>
+                ) : hasImages ? (
+                  <>
+                    <CheckCircle className="h-12 w-12 text-green-500" />
+                    <div>
+                      <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                        {uploadedImages.length} images uploaded successfully
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        From: {fileName}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => folderInputRef.current?.click()}
+                      data-testid="button-upload-new-folder"
+                    >
+                      Upload Different Folder
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="p-4 rounded-full bg-muted">
+                      <FolderOpen className="h-10 w-10 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">
+                        Select a folder containing images
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Supports JPG, PNG, WebP, GIF, BMP, TIFF images
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => folderInputRef.current?.click()}
+                      data-testid="button-browse-folder"
+                    >
+                      Browse Folder
+                    </Button>
+                  </>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <input
+            id="file-input"
+            type="file"
+            accept=".zip"
+            className="hidden"
+            onChange={handleFileInput}
+            data-testid="input-file-upload"
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFolderInput}
+            multiple
+            {...{ webkitdirectory: "", directory: "" } as any}
+            data-testid="input-folder-upload"
+          />
 
           {error && (
             <div className="mt-4 flex items-center gap-2 text-destructive text-sm">
