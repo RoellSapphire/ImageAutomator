@@ -71,6 +71,7 @@ function saveSettings(settings: {
       wordpressConfig: {
         siteUrl: settings.wordpressConfig.siteUrl,
         username: settings.wordpressConfig.username,
+        applicationPassword: settings.wordpressConfig.applicationPassword,
       },
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
