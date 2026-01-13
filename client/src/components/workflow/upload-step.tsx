@@ -3,17 +3,36 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ProcessedImage } from "@/lib/types";
+import type { ProcessedImage, AutoModeSettings, DescriptionTemplate } from "@/lib/types";
 
 interface UploadStepProps {
   onUploadComplete: (images: ProcessedImage[], workflowId: string) => void;
   uploadedImages: ProcessedImage[];
   workflowId: string | null;
+  autoModeSettings: AutoModeSettings;
+  onAutoModeChange: (settings: AutoModeSettings) => void;
+  descriptionTemplates: DescriptionTemplate[];
+  isAutoRunning?: boolean;
+  hasWordPressConfig?: boolean;
+  hasDriveConfig?: boolean;
 }
 
-export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: UploadStepProps) {
+export function UploadStep({ 
+  onUploadComplete, 
+  uploadedImages, 
+  workflowId,
+  autoModeSettings,
+  onAutoModeChange,
+  descriptionTemplates,
+  isAutoRunning = false,
+  hasWordPressConfig = false,
+  hasDriveConfig = false
+}: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -189,6 +208,118 @@ export function UploadStep({ onUploadComplete, uploadedImages, workflowId }: Upl
           Upload images from a ZIP file or select individual image files
         </p>
       </div>
+
+      <Card className={cn(
+        "border-2 transition-colors",
+        autoModeSettings.enabled ? "border-primary/50 bg-primary/5" : ""
+      )}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "p-2 rounded-lg",
+                autoModeSettings.enabled ? "bg-primary text-primary-foreground" : "bg-muted"
+              )}>
+                <Zap className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Auto Mode</CardTitle>
+                <CardDescription>
+                  Process all steps automatically after upload
+                </CardDescription>
+              </div>
+            </div>
+            <Switch
+              checked={autoModeSettings.enabled}
+              onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, enabled })}
+              data-testid="switch-auto-mode"
+            />
+          </div>
+        </CardHeader>
+        {autoModeSettings.enabled && (
+          <CardContent className="space-y-4 pt-0">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="auto-title"
+                    checked={autoModeSettings.autoTitle}
+                    onCheckedChange={(autoTitle) => onAutoModeChange({ ...autoModeSettings, autoTitle })}
+                    data-testid="switch-auto-title"
+                  />
+                  <Label htmlFor="auto-title" className="text-sm">
+                    Auto-generate title (date + "Update")
+                  </Label>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description-template" className="text-sm">Description Template</Label>
+                <Select
+                  value={autoModeSettings.selectedTemplateId || "none"}
+                  onValueChange={(value) => onAutoModeChange({ 
+                    ...autoModeSettings, 
+                    selectedTemplateId: value === "none" ? undefined : value 
+                  })}
+                >
+                  <SelectTrigger id="description-template" data-testid="select-description-template">
+                    <SelectValue placeholder="Select a template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No description</SelectItem>
+                    {descriptionTemplates.map((template) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="skip-export"
+                  checked={autoModeSettings.skipExport}
+                  onCheckedChange={(skipExport) => onAutoModeChange({ ...autoModeSettings, skipExport })}
+                  data-testid="switch-skip-export"
+                />
+                <Label htmlFor="skip-export" className="text-sm">Skip Google Drive export</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="skip-publish"
+                  checked={autoModeSettings.skipPublish}
+                  onCheckedChange={(skipPublish) => onAutoModeChange({ ...autoModeSettings, skipPublish })}
+                  data-testid="switch-skip-publish"
+                />
+                <Label htmlFor="skip-publish" className="text-sm">Skip WordPress publish</Label>
+              </div>
+            </div>
+            {isAutoRunning && (
+              <div className="flex items-center gap-2 text-primary text-sm mt-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Auto mode running...</span>
+              </div>
+            )}
+            {!isAutoRunning && (
+              <div className="space-y-2 mt-2">
+                {!autoModeSettings.skipPublish && !hasWordPressConfig && (
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    <span>WordPress credentials not configured - publishing will be skipped</span>
+                  </div>
+                )}
+                {!autoModeSettings.skipExport && !hasDriveConfig && (
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    <span>Google Drive not connected - export will be skipped</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
 
       <Card>
         <CardHeader>

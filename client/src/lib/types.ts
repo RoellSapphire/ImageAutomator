@@ -12,6 +12,8 @@ export type {
   ProcessRequest,
   PublishRequest,
   ARMemberPlan,
+  DescriptionTemplate,
+  AutoModeSettings,
 } from "@shared/schema";
 
 // Workflow step definitions

@@ -143,6 +143,26 @@ export const processRequestSchema = z.object({
 
 export type ProcessRequest = z.infer<typeof processRequestSchema>;
 
+// Description Template
+export const descriptionTemplateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  content: z.string(),
+});
+
+export type DescriptionTemplate = z.infer<typeof descriptionTemplateSchema>;
+
+// Auto Mode Settings
+export const autoModeSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  autoTitle: z.boolean().default(true),
+  selectedTemplateId: z.string().optional(),
+  skipExport: z.boolean().default(false),
+  skipPublish: z.boolean().default(false),
+});
+
+export type AutoModeSettings = z.infer<typeof autoModeSettingsSchema>;
+
 export const publishRequestSchema = z.object({
   workflowId: z.string(),
   wordpressConfig: wordpressConfigSchema,

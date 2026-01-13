@@ -13,7 +13,9 @@ import type {
   EnhanceConfig, 
   DriveConfig, 
   WordPressConfig,
-  ARMemberPlan 
+  ARMemberPlan,
+  DescriptionTemplate,
+  AutoModeSettings
 } from "@/lib/types";
 
 interface WorkflowContainerProps {
@@ -45,11 +47,43 @@ const DEFAULT_ENHANCE_CONFIG: EnhanceConfig = {
   quality: 90,
 };
 
+const DEFAULT_AUTO_MODE: AutoModeSettings = {
+  enabled: false,
+  autoTitle: true,
+  selectedTemplateId: undefined,
+  skipExport: false,
+  skipPublish: false,
+};
+
+const DEFAULT_TEMPLATES: DescriptionTemplate[] = [
+  { id: "1", name: "New Gallery", content: "Check out this new gallery of AI-generated images!" },
+  { id: "2", name: "Weekly Update", content: "This week's collection of stunning AI artwork." },
+  { id: "3", name: "Featured Collection", content: "A curated collection of our best AI-generated content." },
+  { id: "4", name: "Premium Content", content: "Exclusive premium content for our valued members." },
+  { id: "5", name: "Creative Showcase", content: "Showcasing the latest in AI-generated creativity." },
+  { id: "6", name: "Member Exclusive", content: "Special content exclusively for our members." },
+  { id: "7", name: "Art Collection", content: "A beautiful collection of AI-generated art pieces." },
+  { id: "8", name: "Daily Highlights", content: "Today's highlights from our AI art collection." },
+  { id: "9", name: "New Arrivals", content: "Fresh new additions to our gallery." },
+  { id: "10", name: "Custom", content: "" },
+];
+
+function generateAutoTitle(): string {
+  const now = new Date();
+  return now.toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  }) + " Update";
+}
+
 async function loadServerSettings(): Promise<{
   renameConfig?: RenameConfig;
   enhanceConfig?: EnhanceConfig;
   driveConfig?: DriveConfig;
   wordpressConfig?: Partial<WordPressConfig>;
+  autoModeSettings?: AutoModeSettings;
+  descriptionTemplates?: DescriptionTemplate[];
 } | null> {
   try {
     const response = await fetch('/api/settings');
@@ -67,6 +101,8 @@ async function saveServerSettings(settings: {
   enhanceConfig: EnhanceConfig;
   driveConfig: DriveConfig;
   wordpressConfig: Partial<WordPressConfig>;
+  autoModeSettings?: AutoModeSettings;
+  descriptionTemplates?: DescriptionTemplate[];
 }) {
   try {
     const toSave = {
@@ -114,6 +150,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [driveConfig, setDriveConfig] = useState<DriveConfig>(DEFAULT_DRIVE_CONFIG);
   const [wordpressConfig, setWordpressConfig] = useState<WordPressConfig>(DEFAULT_WORDPRESS_CONFIG);
   const [armemberPlans, setArmemberPlans] = useState<ARMemberPlan[]>([]);
+  const [autoModeSettings, setAutoModeSettings] = useState<AutoModeSettings>(DEFAULT_AUTO_MODE);
+  const [descriptionTemplates, setDescriptionTemplates] = useState<DescriptionTemplate[]>(DEFAULT_TEMPLATES);
+  const [isAutoRunning, setIsAutoRunning] = useState(false);
 
   useEffect(() => {
     loadServerSettings().then((saved) => {
@@ -122,6 +161,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         if (saved.enhanceConfig) setEnhanceConfig({ ...DEFAULT_ENHANCE_CONFIG, ...saved.enhanceConfig });
         if (saved.driveConfig) setDriveConfig(saved.driveConfig);
         if (saved.wordpressConfig) setWordpressConfig({ ...DEFAULT_WORDPRESS_CONFIG, ...saved.wordpressConfig });
+        if (saved.autoModeSettings) setAutoModeSettings({ ...DEFAULT_AUTO_MODE, ...saved.autoModeSettings });
+        if (saved.descriptionTemplates?.length) setDescriptionTemplates(saved.descriptionTemplates);
       }
       setSettingsLoaded(true);
     });
@@ -134,9 +175,132 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
 
   useEffect(() => {
     if (settingsLoaded) {
-      saveServerSettings({ renameConfig, enhanceConfig, driveConfig, wordpressConfig });
+      saveServerSettings({ renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates });
     }
-  }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, settingsLoaded]);
+  }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, settingsLoaded]);
+
+  const runAutoMode = useCallback(async (wfId: string, uploadedImages: ProcessedImage[]) => {
+    setIsAutoRunning(true);
+    
+    try {
+      onStepChange(2);
+      onStepComplete(2);
+      await new Promise(r => setTimeout(r, 300));
+      
+      onStepChange(3);
+      await new Promise(r => setTimeout(r, 300));
+      
+      const processResponse = await fetch('/api/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workflowId: wfId,
+          renameConfig,
+          enhanceConfig,
+        }),
+      });
+      
+      const processData = await processResponse.json();
+      if (!processResponse.ok) {
+        throw new Error(processData.message || 'Processing failed');
+      }
+      setImages(processData.images);
+      onStepComplete(3);
+      
+      onStepChange(4);
+      await new Promise(r => setTimeout(r, 300));
+      
+      if (!autoModeSettings.skipExport) {
+        const driveStatusResponse = await fetch('/api/drive/status');
+        const driveStatus = await driveStatusResponse.json();
+        
+        if (driveStatus.connected) {
+          setIsDriveConnected(true);
+          const exportResponse = await fetch('/api/drive/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              workflowId: wfId,
+              driveConfig,
+            }),
+          });
+          
+          const exportData = await exportResponse.json();
+          if (!exportResponse.ok) {
+            toast({
+              title: "Export Warning",
+              description: exportData.message || "Export failed",
+              variant: "destructive",
+            });
+          }
+        } else {
+          toast({
+            title: "Export Skipped",
+            description: "Google Drive not connected",
+          });
+        }
+      } else {
+        toast({
+          title: "Export Skipped",
+          description: "Skipped per auto mode settings",
+        });
+      }
+      onStepComplete(4);
+      
+      onStepChange(5);
+      await new Promise(r => setTimeout(r, 300));
+      
+      if (!autoModeSettings.skipPublish && wordpressConfig.siteUrl && wordpressConfig.username && wordpressConfig.applicationPassword) {
+        const template = descriptionTemplates.find(t => t.id === autoModeSettings.selectedTemplateId);
+        const postTitle = autoModeSettings.autoTitle ? generateAutoTitle() : (wordpressConfig.postTitle || generateAutoTitle());
+        const postContent = template ? template.content : wordpressConfig.postContent;
+        
+        const publishResponse = await fetch('/api/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflowId: wfId,
+            wordpressConfig: {
+              ...wordpressConfig,
+              postTitle,
+              postContent,
+            },
+          }),
+        });
+        
+        const publishData = await publishResponse.json();
+        if (publishResponse.ok) {
+          onStepComplete(5);
+          toast({
+            title: "Auto Mode Complete",
+            description: `Published: ${publishData.postUrl || 'Check WordPress admin'}`,
+          });
+        } else {
+          toast({
+            title: "Publish Warning",
+            description: publishData.message || "Publishing failed",
+            variant: "destructive",
+          });
+        }
+      } else {
+        onStepComplete(5);
+        toast({
+          title: "Auto Mode Complete",
+          description: `Processed ${uploadedImages.length} images successfully`,
+        });
+      }
+      
+      onStepChange(1);
+    } catch (error: any) {
+      toast({
+        title: "Auto Mode Error",
+        description: error.message || "An error occurred during auto processing",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAutoRunning(false);
+    }
+  }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, onStepChange, onStepComplete, toast]);
 
   const handleUploadComplete = useCallback((uploadedImages: ProcessedImage[], id: string) => {
     setImages(uploadedImages);
@@ -146,7 +310,11 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       title: "Upload Complete",
       description: `${uploadedImages.length} images extracted successfully`,
     });
-  }, [onStepComplete, toast]);
+    
+    if (autoModeSettings.enabled) {
+      runAutoMode(id, uploadedImages);
+    }
+  }, [onStepComplete, toast, autoModeSettings.enabled, runAutoMode]);
 
   const handleRenameConfigChange = useCallback((config: RenameConfig) => {
     setRenameConfig(config);
@@ -409,6 +577,12 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             onUploadComplete={handleUploadComplete}
             uploadedImages={images}
             workflowId={workflowId}
+            autoModeSettings={autoModeSettings}
+            onAutoModeChange={setAutoModeSettings}
+            descriptionTemplates={descriptionTemplates}
+            isAutoRunning={isAutoRunning}
+            hasWordPressConfig={!!(wordpressConfig.siteUrl && wordpressConfig.username && wordpressConfig.applicationPassword)}
+            hasDriveConfig={isDriveConnected}
           />
         );
       case 2:

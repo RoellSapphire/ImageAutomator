@@ -31,5 +31,63 @@
     "username": "allure-alley",
     "applicationPassword": "nvdp aRf7 QFy8 y065 SDTJ dtjY",
     "armemberApiKey": "vw8VKY6vuMawvaFlw8T6VEbO2E9adm"
-  }
+  },
+  "autoModeSettings": {
+    "enabled": false,
+    "autoTitle": true,
+    "skipExport": false,
+    "skipPublish": false
+  },
+  "descriptionTemplates": [
+    {
+      "id": "1",
+      "name": "New Gallery",
+      "content": "Check out this new gallery of AI-generated images!"
+    },
+    {
+      "id": "2",
+      "name": "Weekly Update",
+      "content": "This week's collection of stunning AI artwork."
+    },
+    {
+      "id": "3",
+      "name": "Featured Collection",
+      "content": "A curated collection of our best AI-generated content."
+    },
+    {
+      "id": "4",
+      "name": "Premium Content",
+      "content": "Exclusive premium content for our valued members."
+    },
+    {
+      "id": "5",
+      "name": "Creative Showcase",
+      "content": "Showcasing the latest in AI-generated creativity."
+    },
+    {
+      "id": "6",
+      "name": "Member Exclusive",
+      "content": "Special content exclusively for our members."
+    },
+    {
+      "id": "7",
+      "name": "Art Collection",
+      "content": "A beautiful collection of AI-generated art pieces."
+    },
+    {
+      "id": "8",
+      "name": "Daily Highlights",
+      "content": "Today's highlights from our AI art collection."
+    },
+    {
+      "id": "9",
+      "name": "New Arrivals",
+      "content": "Fresh new additions to our gallery."
+    },
+    {
+      "id": "10",
+      "name": "Custom",
+      "content": ""
+    }
+  ]
 }
