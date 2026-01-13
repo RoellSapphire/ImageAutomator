@@ -33,8 +33,9 @@
     "armemberApiKey": "vw8VKY6vuMawvaFlw8T6VEbO2E9adm"
   },
   "autoModeSettings": {
-    "enabled": false,
+    "enabled": true,
     "autoTitle": true,
+    "selectedTemplateId": "1",
     "skipExport": false,
     "skipPublish": false
   },
