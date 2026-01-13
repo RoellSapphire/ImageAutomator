@@ -87,6 +87,7 @@ export const wordpressConfigSchema = z.object({
   siteUrl: z.string().url(),
   username: z.string().min(1),
   applicationPassword: z.string().min(1),
+  armemberApiKey: z.string().optional(),
   postStatus: z.enum(["draft", "publish", "pending"]).default("draft"),
   postTitle: z.string().optional(),
   postContent: z.string().optional(),

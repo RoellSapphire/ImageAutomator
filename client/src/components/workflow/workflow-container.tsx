@@ -72,6 +72,7 @@ function saveSettings(settings: {
         siteUrl: settings.wordpressConfig.siteUrl,
         username: settings.wordpressConfig.username,
         applicationPassword: settings.wordpressConfig.applicationPassword,
+        armemberApiKey: settings.wordpressConfig.armemberApiKey,
       },
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
@@ -201,6 +202,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           siteUrl: wordpressConfig.siteUrl,
           username: wordpressConfig.username,
           applicationPassword: wordpressConfig.applicationPassword,
+          armemberApiKey: wordpressConfig.armemberApiKey,
         }),
       });
       

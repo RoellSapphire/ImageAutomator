@@ -117,6 +117,22 @@ export function PublishStep({
                 </p>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="armember-api-key">ARMember API Key (Optional)</Label>
+                <Input
+                  id="armember-api-key"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="vw8VKY6vuMawvaFlw8T6..."
+                  value={localConfig.armemberApiKey || ""}
+                  onChange={(e) => setLocalConfig({ ...localConfig, armemberApiKey: e.target.value })}
+                  className="font-mono"
+                  data-testid="input-armember-api-key"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Find in WordPress: ARMember → General Settings → API Settings
+                </p>
+              </div>
+
               <Button
                 onClick={onVerify}
                 disabled={isVerifying || !localConfig.siteUrl || !localConfig.username || !localConfig.applicationPassword}

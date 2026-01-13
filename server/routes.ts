@@ -512,7 +512,7 @@ export async function registerRoutes(
 
   app.post('/api/wordpress/verify', async (req: Request, res: Response) => {
     try {
-      const { siteUrl, username, applicationPassword } = req.body;
+      const { siteUrl, username, applicationPassword, armemberApiKey } = req.body;
 
       const auth = Buffer.from(`${username}:${applicationPassword}`).toString('base64');
       
@@ -530,25 +530,23 @@ export async function registerRoutes(
 
       let armemberPlans: { id: string; name: string; description?: string }[] = [];
       
-      try {
-        const plansResponse = await fetch(`${siteUrl}/wp-json/armember/v1/plans`, {
-          headers: {
-            'Authorization': `Basic ${auth}`,
-          },
-        });
-        
-        if (plansResponse.ok) {
-          const plansData = await plansResponse.json();
-          if (Array.isArray(plansData)) {
-            armemberPlans = plansData.map((plan: any) => ({
-              id: String(plan.arm_subscription_plan_id || plan.id),
-              name: plan.arm_subscription_plan_name || plan.name || 'Unknown Plan',
-              description: plan.arm_subscription_plan_description || plan.description,
-            }));
+      if (armemberApiKey) {
+        try {
+          const plansResponse = await fetch(`${siteUrl}/wp-json/armember/v1/arm_memberships?arm_api_key=${armemberApiKey}`);
+          
+          if (plansResponse.ok) {
+            const plansData = await plansResponse.json();
+            if (Array.isArray(plansData) && plansData.length > 0) {
+              armemberPlans = plansData.map((plan: any) => ({
+                id: String(plan.arm_subscription_plan_id || plan.id),
+                name: plan.arm_subscription_plan_name || plan.name || 'Unknown Plan',
+                description: plan.arm_subscription_plan_description || plan.description,
+              }));
+            }
           }
+        } catch (planError) {
+          console.log('ARMember plans not available:', planError);
         }
-      } catch (planError) {
-        console.log('ARMember plans not available or not accessible');
       }
 
       if (armemberPlans.length === 0) {
