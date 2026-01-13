@@ -177,10 +177,17 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   }, [toast]);
 
   const handleWordpressConfigChange = useCallback((config: WordPressConfig) => {
-    setWordpressConfig(config);
-    if (isWpVerified) {
-      setIsWpVerified(false);
-    }
+    setWordpressConfig((prevConfig) => {
+      const credentialsChanged = 
+        config.siteUrl !== prevConfig.siteUrl ||
+        config.username !== prevConfig.username ||
+        config.applicationPassword !== prevConfig.applicationPassword;
+      
+      if (credentialsChanged && isWpVerified) {
+        setIsWpVerified(false);
+      }
+      return config;
+    });
   }, [isWpVerified]);
 
   const handleWpVerify = useCallback(async () => {
