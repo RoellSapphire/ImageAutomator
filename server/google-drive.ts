@@ -29,9 +29,7 @@ function getOAuth2Client() {
 }
 
 function getRedirectUri(): string {
-  if (process.env.REPL_SLUG && process.env.REPL_OWNER) {
-    return `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co/api/drive/oauth/callback`;
-  }
+  // Prioritize REPLIT_DEV_DOMAIN as it's the current dev URL format
   if (process.env.REPLIT_DEV_DOMAIN) {
     return `https://${process.env.REPLIT_DEV_DOMAIN}/api/drive/oauth/callback`;
   }
