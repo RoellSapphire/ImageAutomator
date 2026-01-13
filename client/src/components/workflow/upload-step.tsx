@@ -10,8 +10,16 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+interface DriveFolder {
+  id: string;
+  name: string;
+  path: string;
+}
 import type { ProcessedImage, AutoModeSettings, DescriptionTemplate, RenameConfig, EnhanceConfig, DriveConfig, WordPressConfig, ARMemberPlan } from "@/lib/types";
 
 interface UploadStepProps {
@@ -66,6 +74,76 @@ export function UploadStep({
   const [fileName, setFileName] = useState<string | null>(null);
   const [uploadType, setUploadType] = useState<"zip" | "images">("zip");
   const imagesInputRef = useRef<HTMLInputElement>(null);
+  
+  // Folder browser state
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+  const [folders, setFolders] = useState<DriveFolder[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(false);
+  const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<DriveFolder | null>(null);
+
+  const loadFolders = async (parentId?: string) => {
+    setLoadingFolders(true);
+    try {
+      const url = parentId ? `/api/drive/folders?parentId=${parentId}` : '/api/drive/folders';
+      const response = await fetch(url);
+      const data = await response.json();
+      setFolders(data.folders || []);
+    } catch (error) {
+      console.error('Failed to load folders:', error);
+      setFolders([]);
+    } finally {
+      setLoadingFolders(false);
+    }
+  };
+
+  const openFolderBrowser = () => {
+    setShowFolderBrowser(true);
+    setFolderPath([]);
+    setSelectedFolder(null);
+    loadFolders();
+  };
+
+  const navigateToFolder = (folder: DriveFolder) => {
+    setFolderPath([...folderPath, { id: folder.id, name: folder.name }]);
+    setSelectedFolder(null);
+    loadFolders(folder.id);
+  };
+
+  const navigateBack = () => {
+    const newPath = folderPath.slice(0, -1);
+    setFolderPath(newPath);
+    setSelectedFolder(null);
+    loadFolders(newPath.length > 0 ? newPath[newPath.length - 1].id : undefined);
+  };
+
+  const navigateToRoot = () => {
+    setFolderPath([]);
+    setSelectedFolder(null);
+    loadFolders();
+  };
+
+  const selectFolderFromBrowser = () => {
+    if (!driveConfig || !onDriveConfigChange) return;
+    
+    if (selectedFolder) {
+      onDriveConfigChange({ 
+        ...driveConfig, 
+        folderId: selectedFolder.id, 
+        folderPath: '/' + [...folderPath.map(f => f.name), selectedFolder.name].join('/') 
+      });
+    } else if (folderPath.length > 0) {
+      const currentFolder = folderPath[folderPath.length - 1];
+      onDriveConfigChange({ 
+        ...driveConfig, 
+        folderId: currentFolder.id, 
+        folderPath: '/' + folderPath.map(f => f.name).join('/') 
+      });
+    } else {
+      onDriveConfigChange({ ...driveConfig, folderId: undefined, folderPath: '/' });
+    }
+    setShowFolderBrowser(false);
+  };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -530,13 +608,24 @@ export function UploadStep({
                       <div className="space-y-3 py-2">
                         <div className="space-y-1">
                           <Label className="text-xs">Google Drive Folder</Label>
-                          <Input
-                            value={driveConfig.folderPath}
-                            onChange={(e) => onDriveConfigChange({ ...driveConfig, folderPath: e.target.value })}
-                            placeholder="/Civitai Images"
-                            className="h-8 text-sm"
-                            data-testid="input-auto-folder"
-                          />
+                          <div className="flex gap-2">
+                            <Input
+                              value={driveConfig.folderPath}
+                              onChange={(e) => onDriveConfigChange({ ...driveConfig, folderPath: e.target.value, folderId: undefined })}
+                              placeholder="/Civitai Images"
+                              className="h-8 text-sm flex-1"
+                              data-testid="input-auto-folder"
+                            />
+                            <Button 
+                              variant="outline" 
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={openFolderBrowser}
+                              data-testid="button-browse-folder-auto"
+                            >
+                              <FolderOpen className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <Label className="text-sm">Create Subfolder</Label>
@@ -893,6 +982,80 @@ export function UploadStep({
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={showFolderBrowser} onOpenChange={setShowFolderBrowser}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Select Google Drive Folder</DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex items-center gap-2 text-sm text-muted-foreground border-b pb-2">
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={navigateToRoot}>
+              <Home className="h-4 w-4" />
+            </Button>
+            {folderPath.length > 0 && (
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={navigateBack}>
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            )}
+            <span className="truncate">
+              / {folderPath.map(f => f.name).join(' / ')}
+            </span>
+          </div>
+
+          <ScrollArea className="h-[300px]">
+            {loadingFolders ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : folders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <FolderOpen className="h-8 w-8 mb-2" />
+                <p className="text-sm">No folders found</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {folders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className={`flex items-center justify-between p-2 rounded-md cursor-pointer hover-elevate ${
+                      selectedFolder?.id === folder.id ? 'bg-accent' : ''
+                    }`}
+                    onClick={() => setSelectedFolder(selectedFolder?.id === folder.id ? null : folder)}
+                    onDoubleClick={() => navigateToFolder(folder)}
+                    data-testid={`folder-auto-${folder.id}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">{folder.name}</span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateToFolder(folder);
+                      }}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFolderBrowser(false)}>
+              Cancel
+            </Button>
+            <Button onClick={selectFolderFromBrowser} data-testid="button-select-folder-auto">
+              {selectedFolder ? `Select "${selectedFolder.name}"` : folderPath.length > 0 ? `Use "${folderPath[folderPath.length - 1].name}"` : "Use Root"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
