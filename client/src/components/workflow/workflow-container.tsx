@@ -181,16 +181,20 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, settingsLoaded]);
 
   const runAutoMode = useCallback(async (wfId: string, uploadedImages: ProcessedImage[]) => {
+    console.log('[AutoMode] Starting auto mode for workflow:', wfId);
     setIsAutoRunning(true);
     
     try {
+      console.log('[AutoMode] Moving to step 2 (Rename)');
       onStepChange(2);
       onStepComplete(2);
       await new Promise(r => setTimeout(r, 300));
       
+      console.log('[AutoMode] Moving to step 3 (Enhance)');
       onStepChange(3);
       await new Promise(r => setTimeout(r, 300));
       
+      console.log('[AutoMode] Processing images...');
       const processResponse = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -304,6 +308,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, onStepChange, onStepComplete, toast]);
 
   const handleUploadComplete = useCallback((uploadedImages: ProcessedImage[], id: string) => {
+    console.log('[Upload] Complete with', uploadedImages.length, 'images, workflow:', id);
+    console.log('[Upload] Auto mode enabled:', autoModeSettings.enabled);
     setImages(uploadedImages);
     setWorkflowId(id);
     onStepComplete(1);
@@ -313,9 +319,12 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
     });
     
     if (autoModeSettings.enabled) {
-      runAutoMode(id, uploadedImages);
+      console.log('[Upload] Triggering auto mode...');
+      setTimeout(() => {
+        runAutoMode(id, uploadedImages);
+      }, 100);
     }
-  }, [onStepComplete, toast, autoModeSettings.enabled, runAutoMode]);
+  }, [onStepComplete, toast, autoModeSettings, runAutoMode]);
 
   const handleRenameConfigChange = useCallback((config: RenameConfig) => {
     setRenameConfig(config);
