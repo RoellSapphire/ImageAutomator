@@ -186,6 +186,35 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
     }
   }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, settingsLoaded]);
 
+  // Auto-verify WordPress and fetch ARMember plans on settings load
+  useEffect(() => {
+    if (settingsLoaded && wordpressConfig.siteUrl && wordpressConfig.username && wordpressConfig.applicationPassword) {
+      (async () => {
+        try {
+          const response = await fetch('/api/wordpress/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              siteUrl: wordpressConfig.siteUrl,
+              username: wordpressConfig.username,
+              applicationPassword: wordpressConfig.applicationPassword,
+              armemberApiKey: wordpressConfig.armemberApiKey,
+            }),
+          });
+          const data = await response.json();
+          if (response.ok) {
+            setIsWpVerified(true);
+            if (data.armemberPlans) {
+              setArmemberPlans(data.armemberPlans);
+            }
+          }
+        } catch (error) {
+          console.log('Auto-verify failed:', error);
+        }
+      })();
+    }
+  }, [settingsLoaded]);
+
   const runAutoMode = useCallback(async (wfId: string, uploadedImages: ProcessedImage[]) => {
     console.log('[AutoMode] Starting auto mode for workflow:', wfId);
     setIsAutoRunning(true);
