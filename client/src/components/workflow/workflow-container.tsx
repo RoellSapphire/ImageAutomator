@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { ChevronLeft, ChevronRight, Loader2, CheckCircle } from "lucide-react";
@@ -153,6 +153,11 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [autoModeSettings, setAutoModeSettings] = useState<AutoModeSettings>(DEFAULT_AUTO_MODE);
   const [descriptionTemplates, setDescriptionTemplates] = useState<DescriptionTemplate[]>(DEFAULT_TEMPLATES);
   const [isAutoRunning, setIsAutoRunning] = useState(false);
+  
+  const autoModeSettingsRef = useRef(autoModeSettings);
+  useEffect(() => {
+    autoModeSettingsRef.current = autoModeSettings;
+  }, [autoModeSettings]);
 
   useEffect(() => {
     loadServerSettings().then((saved) => {
@@ -307,9 +312,14 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
     }
   }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, onStepChange, onStepComplete, toast]);
 
+  const runAutoModeRef = useRef(runAutoMode);
+  useEffect(() => {
+    runAutoModeRef.current = runAutoMode;
+  }, [runAutoMode]);
+
   const handleUploadComplete = useCallback((uploadedImages: ProcessedImage[], id: string) => {
     console.log('[Upload] Complete with', uploadedImages.length, 'images, workflow:', id);
-    console.log('[Upload] Auto mode enabled:', autoModeSettings.enabled);
+    console.log('[Upload] Auto mode enabled (ref):', autoModeSettingsRef.current.enabled);
     setImages(uploadedImages);
     setWorkflowId(id);
     onStepComplete(1);
@@ -318,13 +328,13 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       description: `${uploadedImages.length} images extracted successfully`,
     });
     
-    if (autoModeSettings.enabled) {
-      console.log('[Upload] Triggering auto mode...');
+    if (autoModeSettingsRef.current.enabled) {
+      console.log('[Upload] Triggering auto mode via ref...');
       setTimeout(() => {
-        runAutoMode(id, uploadedImages);
+        runAutoModeRef.current(id, uploadedImages);
       }, 100);
     }
-  }, [onStepComplete, toast, autoModeSettings, runAutoMode]);
+  }, [onStepComplete, toast]);
 
   const handleRenameConfigChange = useCallback((config: RenameConfig) => {
     setRenameConfig(config);
