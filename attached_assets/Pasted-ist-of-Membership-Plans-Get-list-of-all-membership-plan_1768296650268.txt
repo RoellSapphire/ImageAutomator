@@ -1,0 +1,150 @@
+ist of Membership Plans	 Get list of all membership plans. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_memberships?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm
+Membership Plan Details	 Details of certain membership plan. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_membership_details?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_plan_id={PLAN_ID}
+Field Name
+Parameters
+Plan ID
+arm_plan_id
+(Required)
+Member Details	 Details of certain member. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_member_details?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_user_id={USER_ID}&arm_metakeys={FIELD_METAKEYS}
+Field Name
+Parameters
+Member ID
+arm_user_id
+(Required)
+Field Metakeys
+arm_metakeys
+(Optional)
+Member's Membership plans	 A list of member's membership plans. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_member_memberships?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_user_id={USER_ID}&arm_page=1&arm_perpage=5
+Field Name
+Parameters
+Member ID
+arm_user_id
+(Required)
+Page Number
+arm_page
+(Optional)
+(Default: 1)
+Per Page
+arm_perpage
+(Optional)
+(Default: 5)
+Member's Paid Posts	 A list of member's paid posts. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_member_paid_posts?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_user_id={USER_ID}&arm_page=1&arm_perpage=5
+Field Name
+Parameters
+Member ID
+arm_user_id
+(Required)
+Page Number
+arm_page
+(Optional)
+(Default: 1)
+Per Page
+arm_perpage
+(Optional)
+(Default: 5)
+Member's Plan Payment Transactions	 A list of member's membership plan payment transactions. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_member_payments?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_user_id={USER_ID}&arm_page=1&arm_perpage=5
+Field Name
+Parameters
+Member ID
+arm_user_id
+(Required)
+Page Number
+arm_page
+(Optional)
+(Default: 1)
+Per Page
+arm_perpage
+(Optional)
+(Default: 5)
+Member's Paid Post Payment Transactions	 A list of member's paid post payment Transactions. 
+Check Coupon Code	 Check Coupon Code. 
+Add Plan to Member	 Add new membership plan to member. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_add_member_membership?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_user_id={USER_ID}&arm_plan_id={PLAN_ID}
+Field Name
+Parameters
+Member ID
+arm_user_id
+(Required)
+Plan ID
+arm_plan_id
+(Required)
+Add Transaction	 Add Payment Transaction. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_add_member_transaction?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_user_id={USER_ID}&plan_id={PLAN_ID}&arm_trans_id={TRANSACTION_ID}&gateway={GATEWAY}&arm_status={STATUS}&arm_amount={AMOUNT}&arm_total={TOTAL}&arm_tax_amount={TAX}&coupon_code={COUPON}&is_paid_post_payment=0&arm_paid_post_id=0
+Field Name
+Parameters
+Member ID
+arm_user_id
+(Required)
+Plan ID
+plan_id
+(Required)
+Transaction ID
+arm_trans_id
+(Optional)
+Payment Gateway
+gateway
+(Optional)
+(Default: manual)
+Status
+arm_status
+(Optional)
+(Default: pending) 
+Amount
+arm_amount
+(Optional)
+(Default: 0) 
+Total
+arm_total
+(Optional)
+(Default: 0) 
+Tax Amount
+arm_tax_amount
+(Optional)
+(Default: 0)
+Coupon Code
+coupon_code
+(Optional)
+Paid Post Payment
+is_post_payment
+(Optional)
+(Default: 0)
+Paid Post ID
+is_post_id
+(Optional)
+(Default: 0)
+Cancel Member's plan	 Cancel member's membership plan. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_cancel_member_membership?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_user_id={USER_ID}&arm_plan_id={PLAN_ID}
+Field Name
+Parameters
+Member ID
+arm_user_id
+(Required)
+Plan ID
+arm_plan_id
+(Required)
+Check Member's Membership	 Check member's membership plan assigned and activated. 
+API URL
+https://allure-alley.com/wp-json/armember/v1/arm_check_member_membership?arm_api_key=vw8VKY6vuMawvaFlw8T6VEbO2E9adm&arm_user_id={USER_ID}&arm_plan_id={PLAN_ID}
+Field Name
+Parameters
+Member ID
+arm_user_id
+(Required)
+Plan ID
+arm_plan_id
+(Required)

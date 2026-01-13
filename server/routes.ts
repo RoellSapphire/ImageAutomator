@@ -549,6 +549,9 @@ export async function registerRoutes(
         }
       } catch (planError) {
         console.log('ARMember plans not available or not accessible');
+      }
+
+      if (armemberPlans.length === 0) {
         armemberPlans = [
           { id: "1", name: "Free Member" },
           { id: "2", name: "Premium Member" },
@@ -586,7 +589,7 @@ export async function registerRoutes(
 
       const auth = Buffer.from(`${wordpressConfig.username}:${wordpressConfig.applicationPassword}`).toString('base64');
 
-      const mediaIds: number[] = [];
+      const uploadedMedia: { id: number; url: string }[] = [];
       
       for (const image of workflow.images) {
         const imagePath = image.processedPath || image.originalPath;
@@ -613,7 +616,12 @@ export async function registerRoutes(
 
           if (uploadResponse.ok) {
             const mediaData = await uploadResponse.json();
-            mediaIds.push(mediaData.id);
+            uploadedMedia.push({
+              id: mediaData.id,
+              url: mediaData.source_url || mediaData.guid?.rendered || '',
+            });
+          } else {
+            console.error(`Failed to upload ${image.newName}: ${uploadResponse.status}`);
           }
         } catch (uploadError) {
           console.error(`Failed to upload ${image.newName}:`, uploadError);
@@ -622,10 +630,11 @@ export async function registerRoutes(
 
       let postContent = wordpressConfig.postContent || '';
       
-      if (mediaIds.length > 0) {
+      if (uploadedMedia.length > 0) {
+        const mediaIds = uploadedMedia.map(m => m.id);
         const galleryBlock = `<!-- wp:gallery {"ids":[${mediaIds.join(',')}],"columns":3,"linkTo":"none"} -->
 <figure class="wp-block-gallery has-nested-images columns-3 is-cropped">
-${mediaIds.map(id => `<!-- wp:image {"id":${id}} --><figure class="wp-block-image"><img src="" alt="" class="wp-image-${id}"/></figure><!-- /wp:image -->`).join('\n')}
+${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${m.url}" alt="" class="wp-image-${m.id}"/></figure><!-- /wp:image -->`).join('\n')}
 </figure>
 <!-- /wp:gallery -->`;
         
@@ -638,8 +647,8 @@ ${mediaIds.map(id => `<!-- wp:image {"id":${id}} --><figure class="wp-block-imag
         status: wordpressConfig.postStatus,
       };
 
-      if (mediaIds.length > 0) {
-        postData.featured_media = mediaIds[0];
+      if (uploadedMedia.length > 0) {
+        postData.featured_media = uploadedMedia[0].id;
       }
 
       if (wordpressConfig.categories && wordpressConfig.categories.length > 0) {
