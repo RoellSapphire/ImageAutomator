@@ -35,7 +35,7 @@
   "autoModeSettings": {
     "enabled": true,
     "autoTitle": true,
-    "selectedTemplateId": "4",
+    "selectedTemplateId": "2",
     "skipExport": false,
     "skipPublish": false
   },
