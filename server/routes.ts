@@ -568,12 +568,16 @@ export async function registerRoutes(
               
               if (Array.isArray(plansData)) {
                 plansArray = plansData;
+              } else if (plansData.response?.result && Array.isArray(plansData.response.result)) {
+                plansArray = plansData.response.result;
               } else if (plansData.data && Array.isArray(plansData.data)) {
                 plansArray = plansData.data;
               } else if (plansData.memberships && Array.isArray(plansData.memberships)) {
                 plansArray = plansData.memberships;
               } else if (plansData.plans && Array.isArray(plansData.plans)) {
                 plansArray = plansData.plans;
+              } else if (plansData.result && Array.isArray(plansData.result)) {
+                plansArray = plansData.result;
               } else {
                 const values = Object.values(plansData);
                 if (values.length > 0 && typeof values[0] === 'object') {

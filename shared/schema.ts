@@ -147,6 +147,7 @@ export type ProcessRequest = z.infer<typeof processRequestSchema>;
 export const descriptionTemplateSchema = z.object({
   id: z.string(),
   name: z.string(),
+  title: z.string().optional(),
   content: z.string(),
 });
 

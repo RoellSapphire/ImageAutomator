@@ -56,16 +56,16 @@ const DEFAULT_AUTO_MODE: AutoModeSettings = {
 };
 
 const DEFAULT_TEMPLATES: DescriptionTemplate[] = [
-  { id: "1", name: "New Gallery", content: "Check out this new gallery of AI-generated images!" },
-  { id: "2", name: "Weekly Update", content: "This week's collection of stunning AI artwork." },
-  { id: "3", name: "Featured Collection", content: "A curated collection of our best AI-generated content." },
-  { id: "4", name: "Premium Content", content: "Exclusive premium content for our valued members." },
-  { id: "5", name: "Creative Showcase", content: "Showcasing the latest in AI-generated creativity." },
-  { id: "6", name: "Member Exclusive", content: "Special content exclusively for our members." },
-  { id: "7", name: "Art Collection", content: "A beautiful collection of AI-generated art pieces." },
-  { id: "8", name: "Daily Highlights", content: "Today's highlights from our AI art collection." },
-  { id: "9", name: "New Arrivals", content: "Fresh new additions to our gallery." },
-  { id: "10", name: "Custom", content: "" },
+  { id: "1", name: "New Gallery", title: "New Gallery Update", content: "Discover our latest gallery featuring fresh AI-generated artwork. Browse through this stunning collection of digital creations." },
+  { id: "2", name: "Weekly Update", title: "Weekly Art Update", content: "This week's curated selection of AI-generated masterpieces. Explore the latest additions to our growing collection of digital art." },
+  { id: "3", name: "Featured Collection", title: "Featured Art Collection", content: "A hand-picked collection of our finest AI-generated content. These pieces represent the best of what our gallery has to offer." },
+  { id: "4", name: "Premium Content", title: "Premium Member Content", content: "Exclusive premium content crafted for our valued members. Enjoy this special selection of high-quality AI artwork." },
+  { id: "5", name: "Creative Showcase", title: "Creative Art Showcase", content: "Showcasing the latest innovations in AI-generated creativity. Explore unique artistic styles and stunning visual compositions." },
+  { id: "6", name: "Member Exclusive", title: "Member Exclusive Gallery", content: "Special content created exclusively for our members. Thank you for being part of our community." },
+  { id: "7", name: "Art Collection", title: "Art Collection Update", content: "A beautiful new collection of AI-generated art pieces. Each image has been carefully selected for quality and artistic merit." },
+  { id: "8", name: "Daily Highlights", title: "Daily Art Highlights", content: "Today's featured highlights from our AI art collection. Fresh content delivered daily for your viewing pleasure." },
+  { id: "9", name: "New Arrivals", title: "New Arrivals Gallery", content: "Just arrived! Fresh new additions to our gallery. Be among the first to explore these newly generated artworks." },
+  { id: "10", name: "Custom", title: "", content: "" },
 ];
 
 function generateAutoTitle(): string {
@@ -262,7 +262,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       
       if (!autoModeSettings.skipPublish && wordpressConfig.siteUrl && wordpressConfig.username && wordpressConfig.applicationPassword) {
         const template = descriptionTemplates.find(t => t.id === autoModeSettings.selectedTemplateId);
-        const postTitle = autoModeSettings.autoTitle ? generateAutoTitle() : (wordpressConfig.postTitle || generateAutoTitle());
+        const postTitle = autoModeSettings.autoTitle 
+          ? generateAutoTitle() 
+          : (template?.title || wordpressConfig.postTitle || generateAutoTitle());
         const postContent = template ? template.content : wordpressConfig.postContent;
         
         const publishResponse = await fetch('/api/publish', {
@@ -608,6 +610,15 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             hasDriveConfig={isDriveConnected}
             onConnectDrive={handleDriveConnect}
             isConnectingDrive={isConnectingDrive}
+            renameConfig={renameConfig}
+            onRenameConfigChange={handleRenameConfigChange}
+            enhanceConfig={enhanceConfig}
+            onEnhanceConfigChange={handleEnhanceConfigChange}
+            driveConfig={driveConfig}
+            onDriveConfigChange={handleDriveConfigChange}
+            wordpressConfig={wordpressConfig}
+            onWordpressConfigChange={handleWordpressConfigChange}
+            armemberPlans={armemberPlans}
           />
         );
       case 2:

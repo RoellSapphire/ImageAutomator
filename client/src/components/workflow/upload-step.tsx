@@ -5,10 +5,14 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ProcessedImage, AutoModeSettings, DescriptionTemplate } from "@/lib/types";
+import type { ProcessedImage, AutoModeSettings, DescriptionTemplate, RenameConfig, EnhanceConfig, DriveConfig, WordPressConfig, ARMemberPlan } from "@/lib/types";
 
 interface UploadStepProps {
   onUploadComplete: (images: ProcessedImage[], workflowId: string) => void;
@@ -22,6 +26,15 @@ interface UploadStepProps {
   hasDriveConfig?: boolean;
   onConnectDrive?: () => Promise<void>;
   isConnectingDrive?: boolean;
+  renameConfig?: RenameConfig;
+  onRenameConfigChange?: (config: RenameConfig) => void;
+  enhanceConfig?: EnhanceConfig;
+  onEnhanceConfigChange?: (config: EnhanceConfig) => void;
+  driveConfig?: DriveConfig;
+  onDriveConfigChange?: (config: DriveConfig) => void;
+  wordpressConfig?: WordPressConfig;
+  onWordpressConfigChange?: (config: WordPressConfig) => void;
+  armemberPlans?: ARMemberPlan[];
 }
 
 export function UploadStep({ 
@@ -35,7 +48,16 @@ export function UploadStep({
   hasWordPressConfig = false,
   hasDriveConfig = false,
   onConnectDrive,
-  isConnectingDrive = false
+  isConnectingDrive = false,
+  renameConfig,
+  onRenameConfigChange,
+  enhanceConfig,
+  onEnhanceConfigChange,
+  driveConfig,
+  onDriveConfigChange,
+  wordpressConfig,
+  onWordpressConfigChange,
+  armemberPlans = []
 }: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -347,6 +369,305 @@ export function UploadStep({
                 )}
               </div>
             )}
+            
+            <div className={cn("mt-4", isAutoRunning && "hidden")}>
+              <Accordion type="single" collapsible>
+                <AccordionItem value="rename" className="border rounded-lg px-3">
+                  <AccordionTrigger className="py-3 hover:no-underline">
+                    <div className="flex items-center gap-2">
+                      <FileEdit className="h-4 w-4" />
+                      <span className="text-sm font-medium">Rename Settings</span>
+                      {renameConfig && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          {renameConfig.prefix}_{"{n}"}
+                        </Badge>
+                      )}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    {renameConfig && onRenameConfigChange && (
+                      <div className="space-y-3 py-2">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Prefix</Label>
+                            <Input
+                              value={renameConfig.prefix}
+                              onChange={(e) => onRenameConfigChange({ ...renameConfig, prefix: e.target.value })}
+                              placeholder="civitai"
+                              className="h-8 text-sm"
+                              data-testid="input-auto-prefix"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Separator</Label>
+                            <div className="flex gap-1">
+                              {["_", "-", "."].map((sep) => (
+                                <Button
+                                  key={sep}
+                                  size="sm"
+                                  variant={renameConfig.separator === sep ? "default" : "outline"}
+                                  onClick={() => onRenameConfigChange({ ...renameConfig, separator: sep })}
+                                  className="h-8 px-3"
+                                  data-testid={`button-auto-sep-${sep}`}
+                                >
+                                  {sep}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Start Number</Label>
+                            <Input
+                              type="number"
+                              value={renameConfig.startNumber}
+                              onChange={(e) => onRenameConfigChange({ ...renameConfig, startNumber: parseInt(e.target.value) || 1 })}
+                              className="h-8 text-sm"
+                              data-testid="input-auto-start"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Padding ({renameConfig.padding} digits)</Label>
+                            <Slider
+                              value={[renameConfig.padding]}
+                              onValueChange={([v]) => onRenameConfigChange({ ...renameConfig, padding: v })}
+                              min={1}
+                              max={5}
+                              step={1}
+                              data-testid="slider-auto-padding"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="enhance" className="border rounded-lg px-3 mt-2">
+                  <AccordionTrigger className="py-3 hover:no-underline">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="h-4 w-4" />
+                      <span className="text-sm font-medium">Enhance Settings</span>
+                      {enhanceConfig && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          {enhanceConfig.resize ? `${enhanceConfig.scaleFactor}%` : "No resize"}
+                        </Badge>
+                      )}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    {enhanceConfig && onEnhanceConfigChange && (
+                      <div className="space-y-3 py-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm">Resize Images</Label>
+                          <Switch
+                            checked={enhanceConfig.resize}
+                            onCheckedChange={(resize) => onEnhanceConfigChange({ ...enhanceConfig, resize })}
+                            data-testid="switch-auto-resize"
+                          />
+                        </div>
+                        {enhanceConfig.resize && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span>Scale Factor</span>
+                              <span className="font-medium">{enhanceConfig.scaleFactor}%</span>
+                            </div>
+                            <Slider
+                              value={[enhanceConfig.scaleFactor]}
+                              onValueChange={([v]) => onEnhanceConfigChange({ ...enhanceConfig, scaleFactor: v })}
+                              min={10}
+                              max={300}
+                              step={10}
+                              data-testid="slider-auto-scale"
+                            />
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm">Remove EXIF Data</Label>
+                          <Switch
+                            checked={enhanceConfig.removeExif}
+                            onCheckedChange={(removeExif) => onEnhanceConfigChange({ ...enhanceConfig, removeExif })}
+                            data-testid="switch-auto-exif"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Output Format</Label>
+                          <Select
+                            value={enhanceConfig.outputFormat}
+                            onValueChange={(outputFormat: any) => onEnhanceConfigChange({ ...enhanceConfig, outputFormat })}
+                          >
+                            <SelectTrigger className="h-8 text-sm" data-testid="select-auto-format">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="original">Keep Original</SelectItem>
+                              <SelectItem value="jpeg">JPEG</SelectItem>
+                              <SelectItem value="png">PNG</SelectItem>
+                              <SelectItem value="webp">WebP</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="export" className="border rounded-lg px-3 mt-2">
+                  <AccordionTrigger className="py-3 hover:no-underline">
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="h-4 w-4" />
+                      <span className="text-sm font-medium">Export Settings</span>
+                      {driveConfig && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          {driveConfig.folderPath || "/"}
+                        </Badge>
+                      )}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    {driveConfig && onDriveConfigChange && (
+                      <div className="space-y-3 py-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Google Drive Folder</Label>
+                          <Input
+                            value={driveConfig.folderPath}
+                            onChange={(e) => onDriveConfigChange({ ...driveConfig, folderPath: e.target.value })}
+                            placeholder="/Civitai Images"
+                            className="h-8 text-sm"
+                            data-testid="input-auto-folder"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm">Create Subfolder</Label>
+                          <Switch
+                            checked={driveConfig.createSubfolder}
+                            onCheckedChange={(createSubfolder) => onDriveConfigChange({ ...driveConfig, createSubfolder })}
+                            data-testid="switch-auto-subfolder"
+                          />
+                        </div>
+                        {driveConfig.createSubfolder && (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Subfolder Name</Label>
+                            <Input
+                              value={driveConfig.subfolderName}
+                              onChange={(e) => onDriveConfigChange({ ...driveConfig, subfolderName: e.target.value })}
+                              placeholder="batch-001"
+                              className="h-8 text-sm"
+                              data-testid="input-auto-subfolder-name"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="publish" className="border rounded-lg px-3 mt-2">
+                  <AccordionTrigger className="py-3 hover:no-underline">
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-4 w-4" />
+                      <span className="text-sm font-medium">Publish Settings</span>
+                      {wordpressConfig?.siteUrl && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          {new URL(wordpressConfig.siteUrl).hostname}
+                        </Badge>
+                      )}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    {wordpressConfig && onWordpressConfigChange && (
+                      <div className="space-y-3 py-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">WordPress Site URL</Label>
+                          <Input
+                            value={wordpressConfig.siteUrl}
+                            onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, siteUrl: e.target.value })}
+                            placeholder="https://yoursite.com"
+                            className="h-8 text-sm"
+                            data-testid="input-auto-site-url"
+                          />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Username</Label>
+                            <Input
+                              value={wordpressConfig.username}
+                              onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, username: e.target.value })}
+                              placeholder="admin"
+                              className="h-8 text-sm"
+                              data-testid="input-auto-username"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">App Password</Label>
+                            <Input
+                              type="password"
+                              value={wordpressConfig.applicationPassword}
+                              onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, applicationPassword: e.target.value })}
+                              placeholder="xxxx xxxx xxxx"
+                              className="h-8 text-sm font-mono"
+                              data-testid="input-auto-app-password"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">ARMember API Key</Label>
+                          <Input
+                            type="password"
+                            value={wordpressConfig.armemberApiKey || ""}
+                            onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, armemberApiKey: e.target.value })}
+                            placeholder="vw8VKY6vu..."
+                            className="h-8 text-sm font-mono"
+                            data-testid="input-auto-armember-key"
+                          />
+                        </div>
+                        {armemberPlans.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Membership Plan</Label>
+                            <Select
+                              value={wordpressConfig.armemberPlanId || "public"}
+                              onValueChange={(value) => onWordpressConfigChange({ 
+                                ...wordpressConfig, 
+                                armemberPlanId: value === "public" ? undefined : value 
+                              })}
+                            >
+                              <SelectTrigger className="h-8 text-sm" data-testid="select-auto-plan">
+                                <SelectValue placeholder="Select plan" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="public">Public (No Restriction)</SelectItem>
+                                {armemberPlans.map((plan) => (
+                                  <SelectItem key={plan.id} value={plan.id}>
+                                    {plan.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <Label className="text-xs">Post Status</Label>
+                          <Select
+                            value={wordpressConfig.postStatus}
+                            onValueChange={(postStatus: any) => onWordpressConfigChange({ ...wordpressConfig, postStatus })}
+                          >
+                            <SelectTrigger className="h-8 text-sm" data-testid="select-auto-status">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="draft">Save as Draft</SelectItem>
+                              <SelectItem value="pending">Pending Review</SelectItem>
+                              <SelectItem value="publish">Publish Immediately</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </div>
           </CardContent>
         )}
       </Card>
