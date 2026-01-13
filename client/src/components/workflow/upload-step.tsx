@@ -20,6 +20,8 @@ interface UploadStepProps {
   isAutoRunning?: boolean;
   hasWordPressConfig?: boolean;
   hasDriveConfig?: boolean;
+  onConnectDrive?: () => Promise<void>;
+  isConnectingDrive?: boolean;
 }
 
 export function UploadStep({ 
@@ -31,7 +33,9 @@ export function UploadStep({
   descriptionTemplates,
   isAutoRunning = false,
   hasWordPressConfig = false,
-  hasDriveConfig = false
+  hasDriveConfig = false,
+  onConnectDrive,
+  isConnectingDrive = false
 }: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -310,9 +314,35 @@ export function UploadStep({
                   </div>
                 )}
                 {!autoModeSettings.skipExport && !hasDriveConfig && (
-                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm">
-                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                    <span>Google Drive not connected - export will be skipped</span>
+                  <div className="flex items-center justify-between gap-2 text-amber-600 dark:text-amber-400 text-sm">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                      <span>Google Drive not connected</span>
+                    </div>
+                    {onConnectDrive && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onConnectDrive}
+                        disabled={isConnectingDrive}
+                        data-testid="button-connect-drive-auto"
+                      >
+                        {isConnectingDrive ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            Connecting...
+                          </>
+                        ) : (
+                          "Connect Drive"
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {!autoModeSettings.skipExport && hasDriveConfig && (
+                  <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm">
+                    <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                    <span>Google Drive connected</span>
                   </div>
                 )}
               </div>

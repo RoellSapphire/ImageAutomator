@@ -169,6 +169,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   }, []);
   
   const [isDriveConnected, setIsDriveConnected] = useState(false);
+  const [isConnectingDrive, setIsConnectingDrive] = useState(false);
   const [isWpVerifying, setIsWpVerifying] = useState(false);
   const [isWpVerified, setIsWpVerified] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -329,6 +330,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   }, []);
 
   const handleDriveConnect = useCallback(async () => {
+    setIsConnectingDrive(true);
     try {
       const response = await fetch('/api/drive/status');
       const data = await response.json();
@@ -351,6 +353,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         description: "Could not verify Google Drive connection",
         variant: "destructive",
       });
+    } finally {
+      setIsConnectingDrive(false);
     }
   }, [toast]);
 
@@ -583,6 +587,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             isAutoRunning={isAutoRunning}
             hasWordPressConfig={!!(wordpressConfig.siteUrl && wordpressConfig.username && wordpressConfig.applicationPassword)}
             hasDriveConfig={isDriveConnected}
+            onConnectDrive={handleDriveConnect}
+            isConnectingDrive={isConnectingDrive}
           />
         );
       case 2:
