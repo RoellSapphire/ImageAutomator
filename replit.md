@@ -5,6 +5,7 @@ A workflow automation app for processing Civitai images. The app automates the p
 
 ## Current State
 - **MVP Complete**: Full 5-step workflow is implemented
+- **Auto Mode**: Automatic processing of all workflow steps after upload
 - **Backend**: Express server with file processing using Sharp
 - **Frontend**: React with shadcn/ui components
 - **Integrations**: Google Drive (Replit connector), WordPress REST API
@@ -58,6 +59,13 @@ A workflow automation app for processing Civitai images. The app automates the p
 - Clean, linear-inspired design
 
 ## Recent Changes
+- 2026-01-13: Auto Mode implementation
+  - Auto Mode toggle on Upload step for one-click processing
+  - Auto title generation (date + "Update" format)
+  - 10 built-in description templates for WordPress posts
+  - Skip options for Google Drive export and WordPress publish
+  - Pre-flight validation warnings for missing configurations
+  - Settings persistence across devices (server-side JSON file)
 - 2026-01-13: Initial MVP implementation
   - Full workflow UI with 5 steps
   - Backend image processing
