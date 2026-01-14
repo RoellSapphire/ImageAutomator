@@ -1,6 +1,6 @@
 {
   "renameConfig": {
-    "prefix": "Hottie",
+    "prefix": "",
     "startNumber": 1,
     "padding": 4,
     "separator": "-"
@@ -34,7 +34,7 @@
   },
   "autoModeSettings": {
     "enabled": true,
-    "autoTitle": true,
+    "autoTitle": false,
     "selectedTemplateId": "4",
     "skipExport": false,
     "skipPublish": false
