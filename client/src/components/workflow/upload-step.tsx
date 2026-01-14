@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles, ArrowUpDown } from "lucide-react";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles, ArrowUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DriveFolder {
@@ -52,6 +52,7 @@ interface UploadStepProps {
   wordpressConfig?: WordPressConfig;
   onWordpressConfigChange?: (config: WordPressConfig) => void;
   armemberPlans?: ARMemberPlan[];
+  onRemoveImage?: (imageId: string) => void;
 }
 
 export function UploadStep({ 
@@ -74,7 +75,8 @@ export function UploadStep({
   onDriveConfigChange,
   wordpressConfig,
   onWordpressConfigChange,
-  armemberPlans = []
+  armemberPlans = [],
+  onRemoveImage
 }: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -1339,10 +1341,10 @@ export function UploadStep({
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {uploadedImages.slice(0, 10).map((image) => (
+              {uploadedImages.map((image) => (
                 <div
                   key={image.id}
-                  className="relative aspect-square rounded-lg overflow-hidden bg-muted"
+                  className="relative aspect-square rounded-lg overflow-hidden bg-muted group"
                   data-testid={`image-preview-${image.id}`}
                 >
                   <img
@@ -1351,17 +1353,21 @@ export function UploadStep({
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
+                  {onRemoveImage && (
+                    <button
+                      onClick={() => onRemoveImage(image.id)}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                      data-testid={`button-remove-image-${image.id}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
                     <p className="text-xs text-white truncate">{image.originalName}</p>
                   </div>
                 </div>
               ))}
             </div>
-            {uploadedImages.length > 10 && (
-              <p className="text-sm text-muted-foreground mt-4 text-center">
-                +{uploadedImages.length - 10} more images
-              </p>
-            )}
           </CardContent>
         </Card>
       )}

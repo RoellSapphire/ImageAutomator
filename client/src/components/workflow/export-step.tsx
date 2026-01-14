@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FolderOpen, Cloud, CheckCircle, AlertCircle, Loader2, Download, ChevronRight, Home, ArrowLeft } from "lucide-react";
+import { FolderOpen, Cloud, CheckCircle, AlertCircle, Loader2, Download, ChevronRight, Home, ArrowLeft, Ban } from "lucide-react";
 import type { DriveConfig, ProcessedImage } from "@/lib/types";
 
 interface DriveFolder {
@@ -26,9 +26,11 @@ interface ExportStepProps {
   onRefreshStatus: () => void;
   onDisconnect: () => void;
   workflowId: string | null;
+  skipExport?: boolean;
+  onSkipExportChange?: (skip: boolean) => void;
 }
 
-export function ExportStep({ images, config, onConfigChange, isConnected, connectedEmail, onRefreshStatus, onDisconnect, workflowId }: ExportStepProps) {
+export function ExportStep({ images, config, onConfigChange, isConnected, connectedEmail, onRefreshStatus, onDisconnect, workflowId, skipExport = false, onSkipExportChange }: ExportStepProps) {
   const [localConfig, setLocalConfig] = useState<DriveConfig>(config);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
@@ -127,7 +129,29 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="skip-export" className="flex items-center gap-2">
+                <Ban className="h-4 w-4" />
+                Skip Export
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Skip uploading to Google Drive
+              </p>
+            </div>
+            <Switch
+              id="skip-export"
+              checked={skipExport}
+              onCheckedChange={(checked) => onSkipExportChange?.(checked)}
+              data-testid="switch-skip-export"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className={`grid gap-6 lg:grid-cols-2 ${skipExport ? 'opacity-50 pointer-events-none' : ''}`}>
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">

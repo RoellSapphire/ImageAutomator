@@ -252,6 +252,39 @@ export async function registerRoutes(
     }
   });
 
+  app.delete('/api/images/:workflowId/:imageId', async (req: Request, res: Response) => {
+    try {
+      const { workflowId, imageId } = req.params;
+      const workflow = await storage.getWorkflow(workflowId);
+      
+      if (!workflow) {
+        return res.status(404).json({ message: 'Workflow not found' });
+      }
+      
+      const image = workflow.images.find(img => img.id === imageId);
+      if (!image) {
+        return res.status(404).json({ message: 'Image not found' });
+      }
+      
+      if (image.originalPath && fs.existsSync(image.originalPath)) {
+        fs.unlinkSync(image.originalPath);
+      }
+      
+      const thumbnailPath = path.join(THUMBNAILS_DIR, `${imageId}.jpg`);
+      if (fs.existsSync(thumbnailPath)) {
+        fs.unlinkSync(thumbnailPath);
+      }
+      
+      const updatedImages = workflow.images.filter(img => img.id !== imageId);
+      await storage.updateWorkflow(workflowId, { images: updatedImages });
+      
+      res.json({ success: true, remainingCount: updatedImages.length });
+    } catch (error) {
+      console.error('Error removing image:', error);
+      res.status(500).json({ message: 'Failed to remove image' });
+    }
+  });
+
   app.post('/api/process', async (req: Request, res: Response) => {
     try {
       const { workflowId, renameConfig, enhanceConfig, skipRename, skipEnhance } = req.body as {

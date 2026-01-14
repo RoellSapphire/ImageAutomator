@@ -170,7 +170,13 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         if (saved.enhanceConfig) setEnhanceConfig({ ...DEFAULT_ENHANCE_CONFIG, ...saved.enhanceConfig });
         if (saved.driveConfig) setDriveConfig(saved.driveConfig);
         if (saved.wordpressConfig) setWordpressConfig({ ...DEFAULT_WORDPRESS_CONFIG, ...saved.wordpressConfig });
-        if (saved.autoModeSettings) setAutoModeSettings({ ...DEFAULT_AUTO_MODE, ...saved.autoModeSettings });
+        if (saved.autoModeSettings) {
+          const merged = { ...DEFAULT_AUTO_MODE, ...saved.autoModeSettings };
+          setAutoModeSettings(merged);
+          if (merged.skipRename) setSkipRename(true);
+          if (merged.skipEnhance) setSkipEnhance(true);
+          if (merged.skipExport) setSkipExport(true);
+        }
         if (saved.descriptionTemplates?.length) setDescriptionTemplates(saved.descriptionTemplates);
       }
       setSettingsLoaded(true);
@@ -183,6 +189,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [isWpVerifying, setIsWpVerifying] = useState(false);
   const [isWpVerified, setIsWpVerified] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [skipRename, setSkipRename] = useState(false);
+  const [skipEnhance, setSkipEnhance] = useState(false);
+  const [skipExport, setSkipExport] = useState(false);
 
   useEffect(() => {
     if (settingsLoaded) {
@@ -441,6 +450,32 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
     });
   }, [isWpVerified]);
 
+  const handleRemoveImage = useCallback(async (imageId: string) => {
+    if (workflowId) {
+      try {
+        await fetch(`/api/images/${workflowId}/${imageId}`, { method: 'DELETE' });
+      } catch (error) {
+        console.error('Failed to delete image from server:', error);
+      }
+    }
+    setImages(prev => prev.filter(img => img.id !== imageId));
+  }, [workflowId]);
+
+  const handleSkipRenameChange = useCallback((value: boolean) => {
+    setSkipRename(value);
+    setAutoModeSettings(prev => ({ ...prev, skipRename: value }));
+  }, []);
+
+  const handleSkipEnhanceChange = useCallback((value: boolean) => {
+    setSkipEnhance(value);
+    setAutoModeSettings(prev => ({ ...prev, skipEnhance: value }));
+  }, []);
+
+  const handleSkipExportChange = useCallback((value: boolean) => {
+    setSkipExport(value);
+    setAutoModeSettings(prev => ({ ...prev, skipExport: value }));
+  }, []);
+
   const handleWpVerify = useCallback(async () => {
     setIsWpVerifying(true);
     try {
@@ -501,6 +536,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             workflowId,
             renameConfig,
             enhanceConfig,
+            skipRename,
+            skipEnhance,
           }),
         });
         
@@ -531,7 +568,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         setIsProcessing(false);
       }
     } else if (currentStep === 4) {
-      if (isDriveConnected) {
+      if (isDriveConnected && !skipExport) {
         setIsProcessing(true);
         try {
           const response = await fetch('/api/drive/export', {
@@ -566,6 +603,11 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         } finally {
           setIsProcessing(false);
         }
+      } else if (skipExport) {
+        toast({
+          title: "Export Skipped",
+          description: "Proceeding to next step",
+        });
       }
       onStepComplete(4);
       onStepChange(5);
@@ -616,7 +658,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       case 1:
         return images.length > 0;
       case 2:
-        return renameConfig.prefix.length > 0;
+        return skipRename || renameConfig.prefix.length > 0;
       case 3:
         return true;
       case 4:
@@ -626,7 +668,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       default:
         return false;
     }
-  }, [currentStep, images, renameConfig, isWpVerified]);
+  }, [currentStep, images, renameConfig, isWpVerified, skipRename]);
 
   const getNextButtonText = () => {
     switch (currentStep) {
@@ -670,6 +712,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             wordpressConfig={wordpressConfig}
             onWordpressConfigChange={handleWordpressConfigChange}
             armemberPlans={armemberPlans}
+            onRemoveImage={handleRemoveImage}
           />
         );
       case 2:
@@ -678,6 +721,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             images={images}
             config={renameConfig}
             onConfigChange={handleRenameConfigChange}
+            skipRename={skipRename}
+            onSkipRenameChange={handleSkipRenameChange}
           />
         );
       case 3:
@@ -686,6 +731,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             images={images}
             config={enhanceConfig}
             onConfigChange={handleEnhanceConfigChange}
+            skipEnhance={skipEnhance}
+            onSkipEnhanceChange={handleSkipEnhanceChange}
           />
         );
       case 4:
@@ -699,6 +746,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             onRefreshStatus={handleDriveConnect}
             onDisconnect={handleDriveDisconnect}
             workflowId={workflowId}
+            skipExport={skipExport}
+            onSkipExportChange={handleSkipExportChange}
           />
         );
       case 5:

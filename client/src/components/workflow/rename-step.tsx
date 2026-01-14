@@ -3,17 +3,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { FileEdit, ArrowRight } from "lucide-react";
+import { FileEdit, ArrowRight, Ban } from "lucide-react";
 import type { RenameConfig, ProcessedImage } from "@/lib/types";
 
 interface RenameStepProps {
   images: ProcessedImage[];
   config: RenameConfig;
   onConfigChange: (config: RenameConfig) => void;
+  skipRename?: boolean;
+  onSkipRenameChange?: (skip: boolean) => void;
 }
 
-export function RenameStep({ images, config, onConfigChange }: RenameStepProps) {
+export function RenameStep({ images, config, onConfigChange, skipRename = false, onSkipRenameChange }: RenameStepProps) {
   const [localConfig, setLocalConfig] = useState<RenameConfig>(config);
 
   useEffect(() => {
@@ -21,6 +24,7 @@ export function RenameStep({ images, config, onConfigChange }: RenameStepProps) 
   }, [localConfig, onConfigChange]);
 
   const generatePreviewName = (index: number, originalName: string) => {
+    if (skipRename) return originalName;
     const ext = originalName.split('.').pop() || 'png';
     const number = (localConfig.startNumber + index).toString().padStart(localConfig.padding, '0');
     return `${localConfig.prefix}${localConfig.separator}${number}.${ext}`;
@@ -37,7 +41,29 @@ export function RenameStep({ images, config, onConfigChange }: RenameStepProps) 
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="skip-rename" className="flex items-center gap-2">
+                <Ban className="h-4 w-4" />
+                Keep Original Names
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Skip renaming and keep original filenames
+              </p>
+            </div>
+            <Switch
+              id="skip-rename"
+              checked={skipRename}
+              onCheckedChange={(checked) => onSkipRenameChange?.(checked)}
+              data-testid="switch-skip-rename"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className={`grid gap-6 lg:grid-cols-2 ${skipRename ? 'opacity-50 pointer-events-none' : ''}`}>
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">

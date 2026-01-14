@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ImageIcon, Maximize, FileType, Droplets, Upload, X, Percent } from "lucide-react";
+import { ImageIcon, Maximize, FileType, Droplets, Upload, X, Percent, Ban } from "lucide-react";
 import type { EnhanceConfig, ProcessedImage, WatermarkImage } from "@/lib/types";
 
 interface EnhanceStepProps {
   images: ProcessedImage[];
   config: EnhanceConfig;
   onConfigChange: (config: EnhanceConfig) => void;
+  skipEnhance?: boolean;
+  onSkipEnhanceChange?: (skip: boolean) => void;
 }
 
 const WATERMARK_POSITIONS = [
@@ -33,7 +35,7 @@ const OUTPUT_FORMATS = [
   { value: "webp", label: "WebP" },
 ] as const;
 
-export function EnhanceStep({ images, config, onConfigChange }: EnhanceStepProps) {
+export function EnhanceStep({ images, config, onConfigChange, skipEnhance = false, onSkipEnhanceChange }: EnhanceStepProps) {
   const [localConfig, setLocalConfig] = useState<EnhanceConfig>(config);
   const watermarkInputRef = useRef<HTMLInputElement>(null);
 
@@ -103,7 +105,29 @@ export function EnhanceStep({ images, config, onConfigChange }: EnhanceStepProps
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="skip-enhance" className="flex items-center gap-2">
+                <Ban className="h-4 w-4" />
+                Skip Enhancement
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Copy images without any processing
+              </p>
+            </div>
+            <Switch
+              id="skip-enhance"
+              checked={skipEnhance}
+              onCheckedChange={(checked) => onSkipEnhanceChange?.(checked)}
+              data-testid="switch-skip-enhance"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className={`grid gap-6 lg:grid-cols-2 ${skipEnhance ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="space-y-6">
           <Card>
             <CardHeader>

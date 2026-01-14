@@ -99,7 +99,20 @@ export function PublishStep({
       const response = await fetch('/api/deviantart/auth-url');
       const data = await response.json();
       if (data.authUrl) {
-        window.location.href = data.authUrl;
+        const authWindow = window.open(data.authUrl, '_blank', 'width=600,height=700');
+        
+        const checkInterval = setInterval(async () => {
+          try {
+            if (authWindow?.closed) {
+              clearInterval(checkInterval);
+              await checkDeviantArtStatus();
+            }
+          } catch (e) {
+            // Ignore cross-origin errors
+          }
+        }, 1000);
+        
+        setTimeout(() => clearInterval(checkInterval), 300000);
       }
     } catch (error) {
       console.error('Failed to get DeviantArt auth URL:', error);
