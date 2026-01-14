@@ -1,6 +1,6 @@
 {
   "renameConfig": {
-    "prefix": "",
+    "prefix": "e",
     "startNumber": 1,
     "padding": 4,
     "separator": "-"
@@ -36,8 +36,11 @@
     "enabled": true,
     "autoTitle": false,
     "selectedTemplateId": "4",
+    "skipRename": false,
+    "skipEnhance": false,
     "skipExport": false,
-    "skipPublish": false
+    "skipPublish": false,
+    "skipDeviantArt": false
   },
   "descriptionTemplates": [
     {

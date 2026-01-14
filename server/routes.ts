@@ -254,10 +254,12 @@ export async function registerRoutes(
 
   app.post('/api/process', async (req: Request, res: Response) => {
     try {
-      const { workflowId, renameConfig, enhanceConfig } = req.body as {
+      const { workflowId, renameConfig, enhanceConfig, skipRename, skipEnhance } = req.body as {
         workflowId: string;
         renameConfig: RenameConfig;
         enhanceConfig: EnhanceConfig;
+        skipRename?: boolean;
+        skipEnhance?: boolean;
       };
 
       const workflow = await storage.getWorkflow(workflowId);
@@ -274,12 +276,34 @@ export async function registerRoutes(
         const image = workflow.images[i];
         
         try {
-          const number = (renameConfig.startNumber + i).toString().padStart(renameConfig.padding, '0');
-          const ext = enhanceConfig.outputFormat === 'original' 
-            ? path.extname(image.originalName).slice(1)
-            : enhanceConfig.outputFormat;
-          const newName = `${renameConfig.prefix}${renameConfig.separator}${number}.${ext}`;
+          let newName: string;
+          if (skipRename) {
+            newName = image.originalName;
+          } else {
+            const number = (renameConfig.startNumber + i).toString().padStart(renameConfig.padding, '0');
+            const ext = enhanceConfig.outputFormat === 'original' 
+              ? path.extname(image.originalName).slice(1)
+              : enhanceConfig.outputFormat;
+            newName = `${renameConfig.prefix}${renameConfig.separator}${number}.${ext}`;
+          }
           const processedPath = path.join(processedDir, newName);
+
+          if (skipEnhance) {
+            fs.copyFileSync(image.originalPath, processedPath);
+            const stats = fs.statSync(processedPath);
+            const dimensions = await getImageDimensions(processedPath);
+
+            processedImages.push({
+              ...image,
+              newName,
+              processedPath,
+              processedSize: stats.size,
+              width: dimensions?.width,
+              height: dimensions?.height,
+              status: "completed",
+            });
+            continue;
+          }
 
           let sharpInstance = sharp(image.originalPath);
           const metadata = await sharp(image.originalPath).metadata();

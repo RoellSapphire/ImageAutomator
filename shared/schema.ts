@@ -158,6 +158,8 @@ export const autoModeSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   autoTitle: z.boolean().default(true),
   selectedTemplateId: z.string().optional(),
+  skipRename: z.boolean().default(false),
+  skipEnhance: z.boolean().default(false),
   skipExport: z.boolean().default(false),
   skipPublish: z.boolean().default(false),
   skipDeviantArt: z.boolean().default(false),

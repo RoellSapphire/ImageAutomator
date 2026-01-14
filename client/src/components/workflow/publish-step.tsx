@@ -31,6 +31,8 @@ interface PublishStepProps {
   isVerifying: boolean;
   isVerified: boolean;
   onVerify: () => void;
+  publishedPostUrl?: string | null;
+  onClearPublishedUrl?: () => void;
 }
 
 const POST_STATUSES = [
@@ -46,7 +48,9 @@ export function PublishStep({
   armemberPlans,
   isVerifying,
   isVerified,
-  onVerify 
+  onVerify,
+  publishedPostUrl,
+  onClearPublishedUrl
 }: PublishStepProps) {
   const [localConfig, setLocalConfig] = useState<WordPressConfig>(config);
   const [showPassword, setShowPassword] = useState(false);
@@ -90,8 +94,16 @@ export function PublishStep({
     }
   };
   
-  const connectDeviantArt = () => {
-    window.location.href = '/api/deviantart/auth';
+  const connectDeviantArt = async () => {
+    try {
+      const response = await fetch('/api/deviantart/auth-url');
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error('Failed to get DeviantArt auth URL:', error);
+    }
   };
   
   const disconnectDeviantArt = async () => {
@@ -196,6 +208,42 @@ export function PublishStep({
           Create posts on your WordPress site with ARMember permissions
         </p>
       </div>
+
+      {publishedPostUrl && (
+        <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2 text-green-700 dark:text-green-300">
+              <CheckCircle className="h-5 w-5" />
+              Post Published Successfully
+            </CardTitle>
+            <CardDescription className="text-green-600 dark:text-green-400">
+              Your post has been created on WordPress
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-4 flex-wrap">
+              <Button
+                variant="default"
+                onClick={() => window.open(publishedPostUrl, '_blank')}
+                data-testid="button-view-post"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                View Published Post
+              </Button>
+              <Button
+                variant="outline"
+                onClick={onClearPublishedUrl}
+                data-testid="button-dismiss-review"
+              >
+                Dismiss
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground break-all">
+              {publishedPostUrl}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">

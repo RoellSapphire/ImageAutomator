@@ -542,6 +542,24 @@ export function UploadStep({
             <div className="flex flex-wrap gap-4">
               <div className="flex items-center gap-2">
                 <Switch
+                  id="skip-rename"
+                  checked={autoModeSettings.skipRename}
+                  onCheckedChange={(skipRename) => onAutoModeChange({ ...autoModeSettings, skipRename })}
+                  data-testid="switch-skip-rename"
+                />
+                <Label htmlFor="skip-rename" className="text-sm">Skip Rename</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="skip-enhance"
+                  checked={autoModeSettings.skipEnhance}
+                  onCheckedChange={(skipEnhance) => onAutoModeChange({ ...autoModeSettings, skipEnhance })}
+                  data-testid="switch-skip-enhance"
+                />
+                <Label htmlFor="skip-enhance" className="text-sm">Skip Enhance</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
                   id="skip-export"
                   checked={autoModeSettings.skipExport}
                   onCheckedChange={(skipExport) => onAutoModeChange({ ...autoModeSettings, skipExport })}

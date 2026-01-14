@@ -51,8 +51,11 @@ const DEFAULT_AUTO_MODE: AutoModeSettings = {
   enabled: false,
   autoTitle: true,
   selectedTemplateId: undefined,
+  skipRename: false,
+  skipEnhance: false,
   skipExport: false,
   skipPublish: false,
+  skipDeviantArt: false,
 };
 
 const DEFAULT_TEMPLATES: DescriptionTemplate[] = [
@@ -153,6 +156,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [autoModeSettings, setAutoModeSettings] = useState<AutoModeSettings>(DEFAULT_AUTO_MODE);
   const [descriptionTemplates, setDescriptionTemplates] = useState<DescriptionTemplate[]>(DEFAULT_TEMPLATES);
   const [isAutoRunning, setIsAutoRunning] = useState(false);
+  const [publishedPostUrl, setPublishedPostUrl] = useState<string | null>(null);
   
   const autoModeSettingsRef = useRef(autoModeSettings);
   useEffect(() => {
@@ -237,6 +241,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           workflowId: wfId,
           renameConfig,
           enhanceConfig,
+          skipRename: autoModeSettings.skipRename,
+          skipEnhance: autoModeSettings.skipEnhance,
         }),
       });
       
@@ -313,6 +319,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         const publishData = await publishResponse.json();
         if (publishResponse.ok) {
           onStepComplete(5);
+          if (publishData.postUrl) {
+            setPublishedPostUrl(publishData.postUrl);
+          }
           toast({
             title: "Auto Mode Complete",
             description: `Published: ${publishData.postUrl || 'Check WordPress admin'}`,
@@ -576,6 +585,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         
         if (response.ok) {
           onStepComplete(5);
+          if (data.postUrl) {
+            setPublishedPostUrl(data.postUrl);
+          }
           toast({
             title: "Published Successfully",
             description: `Post created: ${data.postUrl || 'Check your WordPress admin'}`,
@@ -699,6 +711,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             isVerifying={isWpVerifying}
             isVerified={isWpVerified}
             onVerify={handleWpVerify}
+            publishedPostUrl={publishedPostUrl}
+            onClearPublishedUrl={() => setPublishedPostUrl(null)}
           />
         );
       default:
