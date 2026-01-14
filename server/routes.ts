@@ -9,6 +9,7 @@ import fs from "fs";
 import { randomUUID } from "crypto";
 import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage } from "@shared/schema";
 import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
+import { getCivitaiUser, getUserImages, downloadImage, type CivitaiImage } from "./civitai";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -910,6 +911,162 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
     } catch (error) {
       console.error('Drive folders error:', error);
       res.status(500).json({ message: 'Failed to list folders', folders: [] });
+    }
+  });
+
+  // Civitai API endpoints
+  app.get('/api/civitai/status', async (req: Request, res: Response) => {
+    try {
+      const apiKey = process.env.CIVITAI_API_KEY;
+      if (!apiKey) {
+        return res.json({ connected: false, message: 'No API key configured' });
+      }
+
+      const user = await getCivitaiUser(apiKey);
+      if (user) {
+        res.json({ connected: true, username: user.username, userId: user.id });
+      } else {
+        res.json({ connected: false, message: 'Invalid API key or connection failed' });
+      }
+    } catch (error) {
+      console.error('Civitai status error:', error);
+      res.status(500).json({ connected: false, message: 'Failed to check Civitai status' });
+    }
+  });
+
+  app.get('/api/civitai/images', async (req: Request, res: Response) => {
+    try {
+      const apiKey = process.env.CIVITAI_API_KEY;
+      if (!apiKey) {
+        return res.status(400).json({ message: 'No Civitai API key configured' });
+      }
+
+      const user = await getCivitaiUser(apiKey);
+      if (!user) {
+        return res.status(401).json({ message: 'Failed to authenticate with Civitai' });
+      }
+
+      const cursor = req.query.cursor ? parseInt(req.query.cursor as string) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const sort = (req.query.sort as 'Most Reactions' | 'Most Comments' | 'Newest') || 'Newest';
+      const period = (req.query.period as 'AllTime' | 'Year' | 'Month' | 'Week' | 'Day') || 'AllTime';
+
+      const response = await getUserImages(apiKey, user.username, {
+        cursor,
+        limit,
+        sort,
+        period,
+      });
+
+      res.json({
+        images: response.items,
+        metadata: response.metadata,
+        username: user.username,
+      });
+    } catch (error) {
+      console.error('Civitai images error:', error);
+      res.status(500).json({ message: 'Failed to fetch Civitai images' });
+    }
+  });
+
+  app.post('/api/civitai/import', async (req: Request, res: Response) => {
+    try {
+      const apiKey = process.env.CIVITAI_API_KEY;
+      if (!apiKey) {
+        return res.status(400).json({ message: 'No Civitai API key configured' });
+      }
+
+      const { imageIds } = req.body as { imageIds: number[] };
+      if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
+        return res.status(400).json({ message: 'No image IDs provided' });
+      }
+
+      // Get user info
+      const user = await getCivitaiUser(apiKey);
+      if (!user) {
+        return res.status(401).json({ message: 'Failed to authenticate with Civitai' });
+      }
+
+      // Fetch all user images to find the ones we want
+      const allImages: CivitaiImage[] = [];
+      let cursor: number | undefined;
+      
+      // Fetch up to 500 images to find our selections
+      for (let i = 0; i < 5; i++) {
+        const response = await getUserImages(apiKey, user.username, {
+          cursor,
+          limit: 100,
+        });
+        allImages.push(...response.items);
+        
+        if (!response.metadata.nextCursor) break;
+        cursor = response.metadata.nextCursor;
+        
+        // Check if we have all the IDs we need
+        const foundIds = new Set(allImages.map(img => img.id));
+        if (imageIds.every(id => foundIds.has(id))) break;
+      }
+
+      const selectedImages = allImages.filter(img => imageIds.includes(img.id));
+      
+      if (selectedImages.length === 0) {
+        return res.status(404).json({ message: 'No matching images found' });
+      }
+
+      // Create a workflow for the import
+      const workflow = await storage.createWorkflow();
+      const workflowDir = path.join(UPLOAD_DIR, workflow.id);
+      fs.mkdirSync(workflowDir, { recursive: true });
+
+      const images: ProcessedImage[] = [];
+
+      for (const civitaiImage of selectedImages) {
+        try {
+          const imageBuffer = await downloadImage(civitaiImage.url);
+          const imageId = randomUUID();
+          const ext = '.jpg'; // Civitai images are typically JPEG
+          const imagePath = path.join(workflowDir, `${imageId}${ext}`);
+          
+          fs.writeFileSync(imagePath, imageBuffer);
+
+          // Create thumbnail
+          const thumbnailPath = path.join(THUMBNAILS_DIR, `${imageId}.jpg`);
+          await createThumbnail(imagePath, thumbnailPath);
+
+          // Get dimensions
+          const dimensions = await getImageDimensions(imagePath);
+
+          images.push({
+            id: imageId,
+            originalName: `civitai_${civitaiImage.id}${ext}`,
+            name: `civitai_${civitaiImage.id}${ext}`,
+            path: imagePath,
+            thumbnailPath,
+            size: imageBuffer.length,
+            width: dimensions?.width || civitaiImage.width,
+            height: dimensions?.height || civitaiImage.height,
+            format: 'jpeg',
+          });
+        } catch (error) {
+          console.error(`Failed to download image ${civitaiImage.id}:`, error);
+        }
+      }
+
+      if (images.length === 0) {
+        return res.status(500).json({ message: 'Failed to download any images' });
+      }
+
+      await storage.updateWorkflow(workflow.id, { images });
+
+      res.json({
+        workflowId: workflow.id,
+        images,
+        imported: images.length,
+        total: selectedImages.length,
+      });
+    } catch (error) {
+      console.error('Civitai import error:', error);
+      res.status(500).json({ message: 'Failed to import Civitai images' });
     }
   });
 
