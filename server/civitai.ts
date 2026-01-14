@@ -98,11 +98,12 @@ export async function getGenerationFeed(
   } = {}
 ): Promise<GenerationFeedResponse> {
   // Use the correct endpoint from civitai-sync: orchestrator.queryGeneratedImages
-  // Parameters: { authed: true, tags: ["gen"], cursor }
-  const input: { json: { authed: boolean; tags: string[]; cursor?: string } } = {
+  // Parameters: { authed: true, tags: ["gen"], cursor, sort: "Newest" }
+  const input: { json: { authed: boolean; tags: string[]; cursor?: string; sort?: string } } = {
     json: {
       authed: true,
       tags: ["gen"],
+      sort: "Newest",  // Ensure newest images are returned first
     }
   };
   
