@@ -98,8 +98,8 @@ export function PublishStep({
     try {
       const response = await fetch('/api/deviantart/auth-url');
       const data = await response.json();
-      if (data.url) {
-        window.location.href = data.url;
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
       }
     } catch (error) {
       console.error('Failed to get DeviantArt auth URL:', error);
