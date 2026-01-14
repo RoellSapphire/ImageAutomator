@@ -1013,12 +1013,24 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       });
 
       // Transform generation feed items to a consistent format
-      const images = response.items.map(item => {
-        // Get the first available image from steps
-        const imageUrl = item.steps?.[0]?.images?.find(img => img.available)?.url;
-        return {
-          id: item.id,
-          url: imageUrl || '',
+      // Each item may have multiple images in steps[].images[] (e.g., batch of 8)
+      const images = response.items.flatMap(item => {
+        // Get ALL available images from all steps
+        const allImages: Array<{ url: string; stepIndex: number; imageIndex: number }> = [];
+        
+        item.steps?.forEach((step, stepIndex) => {
+          step.images?.forEach((img, imageIndex) => {
+            if (img.available && img.url) {
+              allImages.push({ url: img.url, stepIndex, imageIndex });
+            }
+          });
+        });
+        
+        // Return an image object for each available image in the batch
+        return allImages.map((imgData, idx) => ({
+          id: `${item.id}_${imgData.stepIndex}_${imgData.imageIndex}`,
+          batchId: item.id, // Keep track of which batch this belongs to for deletion
+          url: imgData.url,
           width: item.params?.width || 0,
           height: item.params?.height || 0,
           createdAt: item.createdAt,
@@ -1030,8 +1042,8 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
             sampler: item.params?.sampler,
             cfgScale: item.params?.cfgScale,
           },
-        };
-      }).filter(img => img.url); // Only include images with available URLs
+        }));
+      });
 
       res.json({
         images,
@@ -1053,7 +1065,7 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
       // Accept image URLs directly from the frontend
       const { imageUrls, deleteAfterImport } = req.body as { 
-        imageUrls: Array<{ url: string; width: number; height: number; id: string }>;
+        imageUrls: Array<{ url: string; width: number; height: number; id: string; batchId?: string }>;
         deleteAfterImport?: boolean;
       };
       if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
@@ -1106,10 +1118,13 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       await storage.updateWorkflow(workflow.id, { images });
 
       // Delete images from Civitai if requested
+      // Use batchId (the original workflow ID) for deletion, deduplicated
       let deleteResult = null;
       if (deleteAfterImport && images.length > 0) {
-        const idsToDelete = imageUrls.map(img => img.id);
-        console.log(`Deleting ${idsToDelete.length} images from Civitai...`);
+        // Get unique batch IDs (multiple images may share the same batch)
+        const batchIds = new Set(imageUrls.map(img => img.batchId || img.id.split('_')[0]));
+        const idsToDelete = Array.from(batchIds);
+        console.log(`Deleting ${idsToDelete.length} batch(es) from Civitai...`);
         deleteResult = await deleteGeneratedImages(apiKey, idsToDelete);
         console.log(`Delete result: ${deleteResult.deleted} deleted, ${deleteResult.errors.length} errors`);
       }
