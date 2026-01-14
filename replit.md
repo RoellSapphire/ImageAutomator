@@ -59,6 +59,12 @@ A workflow automation app for processing Civitai images. The app automates the p
 - Clean, linear-inspired design
 
 ## Recent Changes
+- 2026-01-14: Bug fixes and improvements
+  - DeviantArt upload: Added token refresh handling with retry on 401 errors
+  - DeviantArt scheduler: Fixed scheduled upload persistence with filePath field
+  - Civitai import: Fixed to load ALL images from batches (was only loading first image)
+  - Civitai delete: Improved batch ID extraction for compound image IDs (best-effort)
+  - WordPress ARMember: Fixed post restriction to use correct `arm_access_plan_ids` array format
 - 2026-01-13: Auto Mode implementation
   - Auto Mode toggle on Upload step for one-click processing
   - Auto title generation (date + "Update" format)
