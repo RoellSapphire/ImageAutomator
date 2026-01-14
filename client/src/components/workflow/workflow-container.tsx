@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, ChevronRight, Loader2, CheckCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, CheckCircle, RotateCcw } from "lucide-react";
 import { UploadStep } from "./upload-step";
 import { RenameStep } from "./rename-step";
 import { EnhanceStep } from "./enhance-step";
@@ -176,6 +176,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           if (merged.skipRename) setSkipRename(true);
           if (merged.skipEnhance) setSkipEnhance(true);
           if (merged.skipExport) setSkipExport(true);
+          if (merged.skipPublish) setSkipWordpress(true);
+          if (merged.skipDeviantArt) setSkipDeviantart(true);
         }
         if (saved.descriptionTemplates?.length) setDescriptionTemplates(saved.descriptionTemplates);
       }
@@ -192,6 +194,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [skipRename, setSkipRename] = useState(false);
   const [skipEnhance, setSkipEnhance] = useState(false);
   const [skipExport, setSkipExport] = useState(false);
+  const [skipWordpress, setSkipWordpress] = useState(false);
+  const [skipDeviantart, setSkipDeviantart] = useState(false);
 
   useEffect(() => {
     if (settingsLoaded) {
@@ -476,6 +480,28 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
     setAutoModeSettings(prev => ({ ...prev, skipExport: value }));
   }, []);
 
+  const handleSkipWordpressChange = useCallback((value: boolean) => {
+    setSkipWordpress(value);
+    setAutoModeSettings(prev => ({ ...prev, skipPublish: value }));
+  }, []);
+
+  const handleSkipDeviantartChange = useCallback((value: boolean) => {
+    setSkipDeviantart(value);
+    setAutoModeSettings(prev => ({ ...prev, skipDeviantArt: value }));
+  }, []);
+
+  const handleRestartFlow = useCallback(() => {
+    setWorkflowId(null);
+    setImages([]);
+    setPublishedPostUrl(null);
+    setIsWpVerified(false);
+    onStepChange(1);
+    toast({
+      title: "Flow Restarted",
+      description: "Ready to start a new workflow",
+    });
+  }, [onStepChange, toast]);
+
   const handleWpVerify = useCallback(async () => {
     setIsWpVerifying(true);
     try {
@@ -612,46 +638,54 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       onStepComplete(4);
       onStepChange(5);
     } else if (currentStep === 5) {
-      setIsProcessing(true);
-      try {
-        const response = await fetch('/api/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            workflowId,
-            wordpressConfig,
-          }),
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-          onStepComplete(5);
-          if (data.postUrl) {
-            setPublishedPostUrl(data.postUrl);
-          }
-          toast({
-            title: "Published Successfully",
-            description: `Post created: ${data.postUrl || 'Check your WordPress admin'}`,
+      if (!skipWordpress) {
+        setIsProcessing(true);
+        try {
+          const response = await fetch('/api/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              workflowId,
+              wordpressConfig,
+            }),
           });
-        } else {
+          
+          const data = await response.json();
+          
+          if (response.ok) {
+            onStepComplete(5);
+            if (data.postUrl) {
+              setPublishedPostUrl(data.postUrl);
+            }
+            toast({
+              title: "Published Successfully",
+              description: `Post created: ${data.postUrl || 'Check your WordPress admin'}`,
+            });
+          } else {
+            toast({
+              title: "Publishing Failed",
+              description: data.message || "Could not publish to WordPress",
+              variant: "destructive",
+            });
+          }
+        } catch (error) {
           toast({
-            title: "Publishing Failed",
-            description: data.message || "Could not publish to WordPress",
+            title: "Publishing Error",
+            description: "Failed to publish to WordPress",
             variant: "destructive",
           });
+        } finally {
+          setIsProcessing(false);
         }
-      } catch (error) {
+      } else {
+        onStepComplete(5);
         toast({
-          title: "Publishing Error",
-          description: "Failed to publish to WordPress",
-          variant: "destructive",
+          title: "Workflow Complete",
+          description: "All steps completed (WordPress skipped)",
         });
-      } finally {
-        setIsProcessing(false);
       }
     }
-  }, [currentStep, workflowId, renameConfig, enhanceConfig, driveConfig, wordpressConfig, isDriveConnected, onStepChange, onStepComplete, toast]);
+  }, [currentStep, workflowId, renameConfig, enhanceConfig, driveConfig, wordpressConfig, isDriveConnected, skipWordpress, skipRename, skipEnhance, skipExport, onStepChange, onStepComplete, toast]);
 
   const canProceed = useCallback(() => {
     switch (currentStep) {
@@ -664,11 +698,11 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       case 4:
         return true;
       case 5:
-        return isWpVerified;
+        return skipWordpress || isWpVerified;
       default:
         return false;
     }
-  }, [currentStep, images, renameConfig, isWpVerified, skipRename]);
+  }, [currentStep, images, renameConfig, isWpVerified, skipRename, skipWordpress]);
 
   const getNextButtonText = () => {
     switch (currentStep) {
@@ -681,7 +715,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       case 4:
         return "Continue to Publish";
       case 5:
-        return "Publish to WordPress";
+        return skipWordpress ? "Complete Workflow" : "Publish to WordPress";
       default:
         return "Next";
     }
@@ -762,6 +796,10 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             onVerify={handleWpVerify}
             publishedPostUrl={publishedPostUrl}
             onClearPublishedUrl={() => setPublishedPostUrl(null)}
+            skipWordpress={skipWordpress}
+            onSkipWordpressChange={handleSkipWordpressChange}
+            skipDeviantart={skipDeviantart}
+            onSkipDeviantartChange={handleSkipDeviantartChange}
           />
         );
       default:
@@ -787,8 +825,21 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             Previous
           </Button>
           
-          <div className="text-sm text-muted-foreground">
-            Step {currentStep} of 5
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">
+              Step {currentStep} of 5
+            </span>
+            {workflowId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRestartFlow}
+                data-testid="button-restart-flow"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Restart Flow
+              </Button>
+            )}
           </div>
           
           <Button

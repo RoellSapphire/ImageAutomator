@@ -33,6 +33,10 @@ interface PublishStepProps {
   onVerify: () => void;
   publishedPostUrl?: string | null;
   onClearPublishedUrl?: () => void;
+  skipWordpress: boolean;
+  onSkipWordpressChange: (skip: boolean) => void;
+  skipDeviantart: boolean;
+  onSkipDeviantartChange: (skip: boolean) => void;
 }
 
 const POST_STATUSES = [
@@ -50,7 +54,11 @@ export function PublishStep({
   isVerified,
   onVerify,
   publishedPostUrl,
-  onClearPublishedUrl
+  onClearPublishedUrl,
+  skipWordpress,
+  onSkipWordpressChange,
+  skipDeviantart,
+  onSkipDeviantartChange
 }: PublishStepProps) {
   const [localConfig, setLocalConfig] = useState<WordPressConfig>(config);
   const [showPassword, setShowPassword] = useState(false);
@@ -99,12 +107,26 @@ export function PublishStep({
       const response = await fetch('/api/deviantart/auth-url');
       const data = await response.json();
       if (data.authUrl) {
-        const authWindow = window.open(data.authUrl, '_blank', 'width=600,height=700');
+        const authWindow = window.open(data.authUrl, 'deviantart_auth', 'width=600,height=700');
         
+        // Listen for postMessage from popup
+        const messageHandler = async (event: MessageEvent) => {
+          if (event.data === 'deviantart-auth-success') {
+            window.removeEventListener('message', messageHandler);
+            await checkDeviantArtStatus();
+          } else if (event.data === 'deviantart-auth-failed') {
+            window.removeEventListener('message', messageHandler);
+            console.error('DeviantArt authentication failed');
+          }
+        };
+        window.addEventListener('message', messageHandler);
+        
+        // Fallback: check when window closes
         const checkInterval = setInterval(async () => {
           try {
             if (authWindow?.closed) {
               clearInterval(checkInterval);
+              window.removeEventListener('message', messageHandler);
               await checkDeviantArtStatus();
             }
           } catch (e) {
@@ -112,7 +134,10 @@ export function PublishStep({
           }
         }, 1000);
         
-        setTimeout(() => clearInterval(checkInterval), 300000);
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          window.removeEventListener('message', messageHandler);
+        }, 300000);
       }
     } catch (error) {
       console.error('Failed to get DeviantArt auth URL:', error);
@@ -215,13 +240,28 @@ export function PublishStep({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Publish to WordPress</h2>
-        <p className="text-muted-foreground mt-1">
-          Create posts on your WordPress site with ARMember permissions
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Publish to WordPress</h2>
+          <p className="text-muted-foreground mt-1">
+            Create posts on your WordPress site with ARMember permissions
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            <Label htmlFor="skip-wordpress" className="text-sm">Skip WordPress</Label>
+          </div>
+          <Switch
+            id="skip-wordpress"
+            checked={skipWordpress}
+            onCheckedChange={onSkipWordpressChange}
+            data-testid="switch-skip-wordpress"
+          />
+        </div>
       </div>
 
+      <div className={skipWordpress ? "opacity-50 pointer-events-none" : ""}>
       {publishedPostUrl && (
         <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950">
           <CardHeader className="pb-3">
@@ -526,20 +566,36 @@ export function PublishStep({
         </div>
       </div>
       
+      </div>
+      
       <Separator className="my-8" />
       
       {/* DeviantArt Section */}
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <SiDeviantart className="h-6 w-6 text-[#05cc47]" />
-          DeviantArt
-        </h2>
-        <p className="text-muted-foreground mt-1">
-          Upload images to DeviantArt with scheduling support
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <SiDeviantart className="h-6 w-6 text-[#05cc47]" />
+            DeviantArt
+          </h2>
+          <p className="text-muted-foreground mt-1">
+            Upload images to DeviantArt with scheduling support
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <SiDeviantart className="h-4 w-4 text-muted-foreground" />
+            <Label htmlFor="skip-deviantart" className="text-sm">Skip DeviantArt</Label>
+          </div>
+          <Switch
+            id="skip-deviantart"
+            checked={skipDeviantart}
+            onCheckedChange={onSkipDeviantartChange}
+            data-testid="switch-skip-deviantart"
+          />
+        </div>
       </div>
       
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className={`grid gap-6 lg:grid-cols-2 ${skipDeviantart ? "opacity-50 pointer-events-none" : ""}`}>
         <div className="space-y-6">
           <Card>
             <CardHeader>

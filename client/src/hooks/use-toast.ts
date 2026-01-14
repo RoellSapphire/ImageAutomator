@@ -161,6 +161,11 @@ function toast({ ...props }: Toast) {
     },
   })
 
+  // Auto-dismiss non-destructive toasts after TOAST_REMOVE_DELAY
+  if (props.variant !== "destructive") {
+    setTimeout(dismiss, TOAST_REMOVE_DELAY)
+  }
+
   return {
     id: id,
     dismiss,

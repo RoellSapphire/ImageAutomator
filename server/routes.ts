@@ -1168,10 +1168,39 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       };
       await storage.saveUserSettings(settings);
       
-      res.redirect('/?deviantart=connected');
+      // Return HTML that closes the popup and signals success
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>DeviantArt Connected</title></head>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage('deviantart-auth-success', '*');
+            }
+            window.close();
+          </script>
+          <p>DeviantArt connected successfully. You can close this window.</p>
+        </body>
+        </html>
+      `);
     } catch (error) {
       console.error('DeviantArt OAuth error:', error);
-      res.redirect('/?error=deviantart_auth_failed');
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>DeviantArt Error</title></head>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage('deviantart-auth-failed', '*');
+            }
+            window.close();
+          </script>
+          <p>DeviantArt authentication failed. You can close this window.</p>
+        </body>
+        </html>
+      `);
     }
   });
 

@@ -36,8 +36,8 @@
     "enabled": false,
     "autoTitle": false,
     "selectedTemplateId": "4",
-    "skipRename": false,
-    "skipEnhance": false,
+    "skipRename": true,
+    "skipEnhance": true,
     "skipExport": false,
     "skipPublish": false,
     "skipDeviantArt": false
