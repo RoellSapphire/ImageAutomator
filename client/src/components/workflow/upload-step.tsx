@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight } from "lucide-react";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DriveFolder {
@@ -21,6 +21,15 @@ interface DriveFolder {
   path: string;
 }
 import type { ProcessedImage, AutoModeSettings, DescriptionTemplate, RenameConfig, EnhanceConfig, DriveConfig, WordPressConfig, ARMemberPlan } from "@/lib/types";
+
+interface CivitaiImageData {
+  id: number;
+  url: string;
+  width: number;
+  height: number;
+  createdAt: string;
+  meta: { prompt?: string; Model?: string } | null;
+}
 
 interface UploadStepProps {
   onUploadComplete: (images: ProcessedImage[], workflowId: string) => void;
@@ -72,8 +81,16 @@ export function UploadStep({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [uploadType, setUploadType] = useState<"zip" | "images">("zip");
+  const [uploadType, setUploadType] = useState<"zip" | "images" | "civitai">("zip");
   const imagesInputRef = useRef<HTMLInputElement>(null);
+  
+  // Civitai state
+  const [civitaiStatus, setCivitaiStatus] = useState<{ connected: boolean; username?: string } | null>(null);
+  const [civitaiImages, setCivitaiImages] = useState<CivitaiImageData[]>([]);
+  const [civitaiLoading, setCivitaiLoading] = useState(false);
+  const [civitaiNextCursor, setCivitaiNextCursor] = useState<number | undefined>();
+  const [selectedCivitaiImages, setSelectedCivitaiImages] = useState<Set<number>>(new Set());
+  const [isImporting, setIsImporting] = useState(false);
   
   // Folder browser state
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
@@ -102,6 +119,102 @@ export function UploadStep({
     setFolderPath([]);
     setSelectedFolder(null);
     loadFolders();
+  };
+
+  // Civitai functions
+  const checkCivitaiStatus = async () => {
+    try {
+      const response = await fetch('/api/civitai/status');
+      const data = await response.json();
+      setCivitaiStatus(data);
+      return data.connected;
+    } catch (error) {
+      console.error('Failed to check Civitai status:', error);
+      setCivitaiStatus({ connected: false });
+      return false;
+    }
+  };
+
+  const loadCivitaiImages = async (reset = false) => {
+    if (civitaiLoading) return;
+    
+    setCivitaiLoading(true);
+    setError(null);
+    
+    try {
+      const cursor = reset ? undefined : civitaiNextCursor;
+      const url = cursor 
+        ? `/api/civitai/images?cursor=${cursor}&limit=50`
+        : '/api/civitai/images?limit=50';
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to load images');
+      }
+      
+      const data = await response.json();
+      
+      if (reset) {
+        setCivitaiImages(data.images);
+      } else {
+        setCivitaiImages(prev => [...prev, ...data.images]);
+      }
+      setCivitaiNextCursor(data.metadata.nextCursor);
+    } catch (error: any) {
+      setError(error.message || 'Failed to load Civitai images');
+    } finally {
+      setCivitaiLoading(false);
+    }
+  };
+
+  const toggleCivitaiImage = (id: number) => {
+    setSelectedCivitaiImages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllCivitaiImages = () => {
+    if (selectedCivitaiImages.size === civitaiImages.length) {
+      setSelectedCivitaiImages(new Set());
+    } else {
+      setSelectedCivitaiImages(new Set(civitaiImages.map(img => img.id)));
+    }
+  };
+
+  const importCivitaiImages = async () => {
+    if (selectedCivitaiImages.size === 0) return;
+    
+    setIsImporting(true);
+    setError(null);
+    
+    try {
+      const response = await fetch('/api/civitai/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageIds: Array.from(selectedCivitaiImages) }),
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to import images');
+      }
+      
+      const data = await response.json();
+      setFileName(`${data.imported} Civitai images`);
+      setSelectedCivitaiImages(new Set());
+      onUploadComplete(data.images, data.workflowId);
+    } catch (error: any) {
+      setError(error.message || 'Failed to import Civitai images');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const navigateToFolder = (folder: DriveFolder) => {
@@ -768,15 +881,26 @@ export function UploadStep({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Tabs value={uploadType} onValueChange={(v) => setUploadType(v as "zip" | "images")}>
-            <TabsList className="grid w-full grid-cols-2">
+          <Tabs value={uploadType} onValueChange={(v) => {
+            setUploadType(v as "zip" | "images" | "civitai");
+            if (v === "civitai" && !civitaiStatus) {
+              checkCivitaiStatus().then(connected => {
+                if (connected) loadCivitaiImages(true);
+              });
+            }
+          }}>
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="zip" className="flex items-center gap-2" data-testid="tab-zip-upload">
                 <FileArchive className="h-4 w-4" />
                 ZIP File
               </TabsTrigger>
               <TabsTrigger value="images" className="flex items-center gap-2" data-testid="tab-images-upload">
                 <Images className="h-4 w-4" />
-                Select Images
+                Images
+              </TabsTrigger>
+              <TabsTrigger value="civitai" className="flex items-center gap-2" data-testid="tab-civitai-import">
+                <Sparkles className="h-4 w-4" />
+                Civitai
               </TabsTrigger>
             </TabsList>
 
@@ -912,6 +1036,136 @@ export function UploadStep({
                     >
                       Select Images
                     </Button>
+                  </>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="civitai" className="mt-4">
+              <div className="space-y-4">
+                {civitaiStatus === null ? (
+                  <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+                    <p className="text-sm text-muted-foreground">Checking Civitai connection...</p>
+                  </div>
+                ) : !civitaiStatus.connected ? (
+                  <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg border-muted-foreground/25">
+                    <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+                    <p className="text-sm font-medium mb-2">Civitai Not Connected</p>
+                    <p className="text-xs text-muted-foreground text-center max-w-sm">
+                      Add your CIVITAI_API_KEY to the Secrets tab to import your generations.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs">
+                          {civitaiStatus.username}
+                        </Badge>
+                        <span className="text-sm text-muted-foreground">
+                          {civitaiImages.length} images loaded
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => loadCivitaiImages(true)}
+                          disabled={civitaiLoading}
+                          data-testid="button-refresh-civitai"
+                        >
+                          <RefreshCw className={cn("h-4 w-4 mr-2", civitaiLoading && "animate-spin")} />
+                          Refresh
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={selectAllCivitaiImages}
+                          disabled={civitaiImages.length === 0}
+                          data-testid="button-select-all-civitai"
+                        >
+                          {selectedCivitaiImages.size === civitaiImages.length ? 'Deselect All' : 'Select All'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={importCivitaiImages}
+                          disabled={selectedCivitaiImages.size === 0 || isImporting}
+                          data-testid="button-import-civitai"
+                        >
+                          {isImporting ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                          )}
+                          Import {selectedCivitaiImages.size > 0 && `(${selectedCivitaiImages.size})`}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {civitaiLoading && civitaiImages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+                        <p className="text-sm text-muted-foreground">Loading your generations...</p>
+                      </div>
+                    ) : civitaiImages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg border-muted-foreground/25">
+                        <Images className="h-12 w-12 text-muted-foreground mb-4" />
+                        <p className="text-sm font-medium mb-2">No Generations Found</p>
+                        <p className="text-xs text-muted-foreground text-center">
+                          Your Civitai generations will appear here.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <ScrollArea className="h-[400px] border rounded-lg p-2">
+                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                            {civitaiImages.map((image) => (
+                              <div
+                                key={image.id}
+                                className={cn(
+                                  "relative aspect-square rounded-lg overflow-hidden cursor-pointer transition-all",
+                                  "hover:ring-2 hover:ring-primary/50",
+                                  selectedCivitaiImages.has(image.id) && "ring-2 ring-primary"
+                                )}
+                                onClick={() => toggleCivitaiImage(image.id)}
+                                data-testid={`civitai-image-${image.id}`}
+                              >
+                                <img
+                                  src={image.url}
+                                  alt={`Civitai generation ${image.id}`}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                                {selectedCivitaiImages.has(image.id) && (
+                                  <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                                    <div className="bg-primary rounded-full p-1">
+                                      <Check className="h-4 w-4 text-primary-foreground" />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+
+                        {civitaiNextCursor && (
+                          <div className="flex justify-center">
+                            <Button
+                              variant="outline"
+                              onClick={() => loadCivitaiImages(false)}
+                              disabled={civitaiLoading}
+                              data-testid="button-load-more-civitai"
+                            >
+                              {civitaiLoading ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              ) : null}
+                              Load More
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </>
                 )}
               </div>
