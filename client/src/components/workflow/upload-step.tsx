@@ -146,15 +146,22 @@ export function UploadStep({
     if (targetCount) setLoadingTarget(targetCount);
     
     try {
+      // When reset=true, start completely fresh - don't read from any existing state
+      // This is important because setState is async and closure would read stale values
       let allImages: CivitaiImageData[] = reset ? [] : [...civitaiImages];
-      let cursor = reset ? undefined : civitaiNextCursor;
-      let nextCursor: string | undefined = cursor;
-      
-      // Start with pending images from previous partial batch
+      let cursor: string | undefined = reset ? undefined : civitaiNextCursor;
+      let nextCursor: string | undefined = undefined;
       let pendingBuffer: CivitaiImageData[] = reset ? [] : [...civitaiPendingImages];
       
+      // Also clear state for reset
+      if (reset) {
+        setCivitaiImages([]);
+        setCivitaiNextCursor(undefined);
+        setCivitaiPendingImages([]);
+      }
+      
       // Load until we reach target count or no more images
-      const target = targetCount || allImages.length + 50;
+      const target = targetCount || 50;
       
       while (allImages.length < target) {
         // First, use any pending images from previous partial batch
@@ -1243,23 +1250,23 @@ export function UploadStep({
                           </div>
                         </ScrollArea>
 
-                        {civitaiNextCursor && civitaiImages.length > 0 && (
+                        {civitaiImages.length > 0 && (
                           <div className="flex justify-center gap-2 flex-wrap">
-                            <span className="text-xs text-muted-foreground self-center">Load more:</span>
+                            <span className="text-xs text-muted-foreground self-center">Load newest:</span>
                             {[40, 80, 120].map((count) => (
                               <Button
                                 key={count}
                                 variant="outline"
                                 size="sm"
-                                onClick={() => loadCivitaiImages(false, civitaiImages.length + count)}
+                                onClick={() => loadCivitaiImages(true, count)}
                                 disabled={civitaiLoading}
                                 className="h-7 px-3 text-xs"
-                                data-testid={`button-load-more-${count}-civitai`}
+                                data-testid={`button-load-newest-${count}-civitai`}
                               >
-                                {civitaiLoading && loadingTarget === civitaiImages.length + count ? (
+                                {civitaiLoading && loadingTarget === count ? (
                                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                                 ) : null}
-                                +{count}
+                                {count}
                               </Button>
                             ))}
                           </div>

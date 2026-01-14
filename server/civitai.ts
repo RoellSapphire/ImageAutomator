@@ -138,6 +138,13 @@ export async function getGenerationFeed(
   const result = data.result.data.json;
   const items: GenerationFeedImage[] = result.items || [];
   
+  // Sort by createdAt descending (newest first) since API may not support sort parameter
+  items.sort((a, b) => {
+    const dateA = new Date(a.createdAt).getTime();
+    const dateB = new Date(b.createdAt).getTime();
+    return dateB - dateA; // Descending order (newest first)
+  });
+  
   return {
     items,
     nextCursor: result.nextCursor,
