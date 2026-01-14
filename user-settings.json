@@ -1,18 +1,18 @@
 {
   "renameConfig": {
-    "prefix": "e",
+    "prefix": "1",
     "startNumber": 1,
     "padding": 4,
     "separator": "-"
   },
   "enhanceConfig": {
-    "resize": true,
+    "resize": false,
     "resizeMode": "scale",
     "scaleFactor": 200,
     "width": 1920,
     "height": 1080,
     "maintainAspectRatio": true,
-    "removeExif": true,
+    "removeExif": false,
     "addWatermark": false,
     "watermarkText": "",
     "watermarkPosition": "bottom-right",
@@ -33,7 +33,7 @@
     "armemberApiKey": "vw8VKY6vuMawvaFlw8T6VEbO2E9adm"
   },
   "autoModeSettings": {
-    "enabled": true,
+    "enabled": false,
     "autoTitle": false,
     "selectedTemplateId": "4",
     "skipRename": false,
