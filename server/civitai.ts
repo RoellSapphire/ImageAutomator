@@ -1,24 +1,18 @@
 
 const CIVITAI_API_BASE = 'https://civitai.com/api/v1';
+const CIVITAI_TRPC_BASE = 'https://civitai.com/api/trpc';
 
 export interface CivitaiImage {
   id: number;
   url: string;
-  hash: string;
+  hash?: string;
   width: number;
   height: number;
-  nsfw: boolean;
-  nsfwLevel: string;
+  nsfw?: boolean;
+  nsfwLevel?: string;
   createdAt: string;
-  postId: number;
-  stats: {
-    cryCount: number;
-    laughCount: number;
-    likeCount: number;
-    dislikeCount: number;
-    heartCount: number;
-    commentCount: number;
-  };
+  postId?: number;
+  steps?: { images?: Array<{ url: string; available: boolean }> };
   meta: {
     prompt?: string;
     negativePrompt?: string;
@@ -29,17 +23,44 @@ export interface CivitaiImage {
     Model?: string;
     [key: string]: any;
   } | null;
-  username: string;
+  username?: string;
+}
+
+export interface GenerationFeedImage {
+  id: string;
+  createdAt: string;
+  params: {
+    prompt?: string;
+    negativePrompt?: string;
+    width: number;
+    height: number;
+    seed?: number;
+    steps?: number;
+    sampler?: string;
+    cfgScale?: number;
+  };
+  steps?: Array<{
+    images?: Array<{
+      url: string;
+      available: boolean;
+      type?: string;
+    }>;
+  }>;
 }
 
 export interface CivitaiImagesResponse {
   items: CivitaiImage[];
   metadata: {
-    nextCursor?: number;
+    nextCursor?: string | number;
     currentPage?: number;
     pageSize?: number;
     nextPage?: string;
   };
+}
+
+export interface GenerationFeedResponse {
+  items: GenerationFeedImage[];
+  nextCursor?: string;
 }
 
 export interface CivitaiUser {
@@ -67,6 +88,59 @@ export async function getCivitaiUser(apiKey: string): Promise<CivitaiUser | null
     console.error('Error fetching Civitai user:', error);
     return null;
   }
+}
+
+export async function getGenerationFeed(
+  apiKey: string,
+  options: {
+    cursor?: string;
+    take?: number;
+  } = {}
+): Promise<GenerationFeedResponse> {
+  // Use the correct endpoint from civitai-sync: orchestrator.queryGeneratedImages
+  // Parameters: { authed: true, tags: ["gen"], cursor }
+  const input: { json: { authed: boolean; tags: string[]; cursor?: string } } = {
+    json: {
+      authed: true,
+      tags: ["gen"],
+    }
+  };
+  
+  if (options.cursor) {
+    input.json.cursor = options.cursor;
+  }
+
+  const url = `${CIVITAI_TRPC_BASE}/orchestrator.queryGeneratedImages?input=${encodeURIComponent(JSON.stringify(input))}`;
+  console.log('Fetching Civitai generation feed from queryGeneratedImages...');
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Referer': 'https://civitai.com/',
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error('Generation feed error:', response.status, text);
+    throw new Error(`Failed to fetch generation feed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  
+  if (!data.result?.data?.json) {
+    console.log('Unexpected response structure:', JSON.stringify(data, null, 2));
+    return { items: [], nextCursor: undefined };
+  }
+
+  const result = data.result.data.json;
+  const items: GenerationFeedImage[] = result.items || [];
+  
+  return {
+    items,
+    nextCursor: result.nextCursor,
+  };
 }
 
 export async function getUserImages(
@@ -98,7 +172,7 @@ export async function getUserImages(
   }
 
   const url = `${CIVITAI_API_BASE}/images?${params.toString()}`;
-  console.log('Fetching Civitai images:', url);
+  console.log('Fetching Civitai posted images:', url);
 
   const response = await fetch(url, {
     headers: {

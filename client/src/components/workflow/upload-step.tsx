@@ -23,7 +23,7 @@ interface DriveFolder {
 import type { ProcessedImage, AutoModeSettings, DescriptionTemplate, RenameConfig, EnhanceConfig, DriveConfig, WordPressConfig, ARMemberPlan } from "@/lib/types";
 
 interface CivitaiImageData {
-  id: number;
+  id: string;
   url: string;
   width: number;
   height: number;
@@ -88,8 +88,8 @@ export function UploadStep({
   const [civitaiStatus, setCivitaiStatus] = useState<{ connected: boolean; username?: string } | null>(null);
   const [civitaiImages, setCivitaiImages] = useState<CivitaiImageData[]>([]);
   const [civitaiLoading, setCivitaiLoading] = useState(false);
-  const [civitaiNextCursor, setCivitaiNextCursor] = useState<number | undefined>();
-  const [selectedCivitaiImages, setSelectedCivitaiImages] = useState<Set<number>>(new Set());
+  const [civitaiNextCursor, setCivitaiNextCursor] = useState<string | undefined>();
+  const [selectedCivitaiImages, setSelectedCivitaiImages] = useState<Set<string>>(new Set());
   const [isImporting, setIsImporting] = useState(false);
   
   // Folder browser state
@@ -168,7 +168,7 @@ export function UploadStep({
     }
   };
 
-  const toggleCivitaiImage = (id: number) => {
+  const toggleCivitaiImage = (id: string) => {
     setSelectedCivitaiImages(prev => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
@@ -195,10 +195,15 @@ export function UploadStep({
     setError(null);
     
     try {
+      // Get the selected image data to send URLs
+      const selectedImagesData = civitaiImages
+        .filter(img => selectedCivitaiImages.has(img.id))
+        .map(img => ({ id: img.id, url: img.url, width: img.width, height: img.height }));
+      
       const response = await fetch('/api/civitai/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageIds: Array.from(selectedCivitaiImages) }),
+        body: JSON.stringify({ imageUrls: selectedImagesData }),
       });
       
       if (!response.ok) {

@@ -9,7 +9,7 @@ import fs from "fs";
 import { randomUUID } from "crypto";
 import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage } from "@shared/schema";
 import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
-import { getCivitaiUser, getUserImages, downloadImage, type CivitaiImage } from "./civitai";
+import { getCivitaiUser, getGenerationFeed, downloadImage, type GenerationFeedImage } from "./civitai";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -946,21 +946,38 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
         return res.status(401).json({ message: 'Failed to authenticate with Civitai' });
       }
 
-      const cursor = req.query.cursor ? parseInt(req.query.cursor as string) : undefined;
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      const sort = (req.query.sort as 'Most Reactions' | 'Most Comments' | 'Newest') || 'Newest';
-      const period = (req.query.period as 'AllTime' | 'Year' | 'Month' | 'Week' | 'Day') || 'AllTime';
+      const cursor = req.query.cursor as string | undefined;
+      const take = req.query.limit ? parseInt(req.query.limit as string) : 20;
 
-      const response = await getUserImages(apiKey, user.username, {
+      const response = await getGenerationFeed(apiKey, {
         cursor,
-        limit,
-        sort,
-        period,
+        take,
       });
 
+      // Transform generation feed items to a consistent format
+      const images = response.items.map(item => {
+        // Get the first available image from steps
+        const imageUrl = item.steps?.[0]?.images?.find(img => img.available)?.url;
+        return {
+          id: item.id,
+          url: imageUrl || '',
+          width: item.params?.width || 0,
+          height: item.params?.height || 0,
+          createdAt: item.createdAt,
+          meta: {
+            prompt: item.params?.prompt,
+            negativePrompt: item.params?.negativePrompt,
+            seed: item.params?.seed,
+            steps: item.params?.steps,
+            sampler: item.params?.sampler,
+            cfgScale: item.params?.cfgScale,
+          },
+        };
+      }).filter(img => img.url); // Only include images with available URLs
+
       res.json({
-        images: response.items,
-        metadata: response.metadata,
+        images,
+        metadata: { nextCursor: response.nextCursor },
         username: user.username,
       });
     } catch (error) {
@@ -976,41 +993,10 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
         return res.status(400).json({ message: 'No Civitai API key configured' });
       }
 
-      const { imageIds } = req.body as { imageIds: number[] };
-      if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
-        return res.status(400).json({ message: 'No image IDs provided' });
-      }
-
-      // Get user info
-      const user = await getCivitaiUser(apiKey);
-      if (!user) {
-        return res.status(401).json({ message: 'Failed to authenticate with Civitai' });
-      }
-
-      // Fetch all user images to find the ones we want
-      const allImages: CivitaiImage[] = [];
-      let cursor: number | undefined;
-      
-      // Fetch up to 500 images to find our selections
-      for (let i = 0; i < 5; i++) {
-        const response = await getUserImages(apiKey, user.username, {
-          cursor,
-          limit: 100,
-        });
-        allImages.push(...response.items);
-        
-        if (!response.metadata.nextCursor) break;
-        cursor = response.metadata.nextCursor;
-        
-        // Check if we have all the IDs we need
-        const foundIds = new Set(allImages.map(img => img.id));
-        if (imageIds.every(id => foundIds.has(id))) break;
-      }
-
-      const selectedImages = allImages.filter(img => imageIds.includes(img.id));
-      
-      if (selectedImages.length === 0) {
-        return res.status(404).json({ message: 'No matching images found' });
+      // Accept image URLs directly from the frontend
+      const { imageUrls } = req.body as { imageUrls: Array<{ url: string; width: number; height: number; id: string }> };
+      if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
+        return res.status(400).json({ message: 'No images provided' });
       }
 
       // Create a workflow for the import
@@ -1020,9 +1006,9 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
       const images: ProcessedImage[] = [];
 
-      for (const civitaiImage of selectedImages) {
+      for (const imageData of imageUrls) {
         try {
-          const imageBuffer = await downloadImage(civitaiImage.url);
+          const imageBuffer = await downloadImage(imageData.url);
           const imageId = randomUUID();
           const ext = '.jpg'; // Civitai images are typically JPEG
           const imagePath = path.join(workflowDir, `${imageId}${ext}`);
@@ -1038,17 +1024,17 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
           images.push({
             id: imageId,
-            originalName: `civitai_${civitaiImage.id}${ext}`,
-            name: `civitai_${civitaiImage.id}${ext}`,
-            path: imagePath,
-            thumbnailPath,
-            size: imageBuffer.length,
-            width: dimensions?.width || civitaiImage.width,
-            height: dimensions?.height || civitaiImage.height,
+            originalName: `civitai_${imageData.id}${ext}`,
+            newName: `civitai_${imageData.id}${ext}`,
+            originalPath: imagePath,
+            originalSize: imageBuffer.length,
+            width: dimensions?.width || imageData.width,
+            height: dimensions?.height || imageData.height,
             format: 'jpeg',
+            status: 'pending',
           });
         } catch (error) {
-          console.error(`Failed to download image ${civitaiImage.id}:`, error);
+          console.error(`Failed to download image ${imageData.id}:`, error);
         }
       }
 
@@ -1062,7 +1048,7 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
         workflowId: workflow.id,
         images,
         imported: images.length,
-        total: selectedImages.length,
+        total: imageUrls.length,
       });
     } catch (error) {
       console.error('Civitai import error:', error);
