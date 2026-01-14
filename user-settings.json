@@ -38,7 +38,7 @@
     "selectedTemplateId": "4",
     "skipRename": true,
     "skipEnhance": true,
-    "skipExport": false,
+    "skipExport": true,
     "skipPublish": false,
     "skipDeviantArt": false
   },

@@ -1134,7 +1134,9 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       return res.status(400).json({ message: 'DeviantArt client ID not configured' });
     }
     
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/deviantart/callback`;
+    // Use x-forwarded-proto for correct protocol behind reverse proxy
+    const protocol = req.get('x-forwarded-proto') || req.protocol;
+    const redirectUri = `${protocol}://${req.get('host')}/api/deviantart/callback`;
     const state = randomUUID();
     const authUrl = deviantart.getAuthUrl(clientId, redirectUri, state);
     
@@ -1156,7 +1158,9 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
     }
 
     try {
-      const redirectUri = `${req.protocol}://${req.get('host')}/api/deviantart/callback`;
+      // Use x-forwarded-proto for correct protocol behind reverse proxy
+      const protocol = req.get('x-forwarded-proto') || req.protocol;
+      const redirectUri = `${protocol}://${req.get('host')}/api/deviantart/callback`;
       const tokens = await deviantart.exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
       
       // Store tokens in settings
