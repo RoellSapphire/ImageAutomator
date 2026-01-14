@@ -196,3 +196,44 @@ export async function downloadImage(imageUrl: string): Promise<Buffer> {
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
+
+export async function deleteGeneratedImages(
+  apiKey: string,
+  imageIds: string[]
+): Promise<{ success: boolean; deleted: number; errors: string[] }> {
+  const errors: string[] = [];
+  let deleted = 0;
+
+  // Delete each image from the generation feed
+  for (const id of imageIds) {
+    try {
+      const input = {
+        json: {
+          ids: [id],
+        }
+      };
+
+      const url = `${CIVITAI_TRPC_BASE}/orchestrator.deleteAllWorkflowSteps?input=${encodeURIComponent(JSON.stringify(input))}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Referer': 'https://civitai.com/',
+        },
+      });
+
+      if (response.ok) {
+        deleted++;
+      } else {
+        const text = await response.text();
+        errors.push(`Failed to delete ${id}: ${response.status} ${text}`);
+      }
+    } catch (error: any) {
+      errors.push(`Error deleting ${id}: ${error.message}`);
+    }
+  }
+
+  return { success: errors.length === 0, deleted, errors };
+}

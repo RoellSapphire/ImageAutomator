@@ -9,7 +9,7 @@ import fs from "fs";
 import { randomUUID } from "crypto";
 import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage } from "@shared/schema";
 import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
-import { getCivitaiUser, getGenerationFeed, downloadImage, type GenerationFeedImage } from "./civitai";
+import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -994,7 +994,10 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       }
 
       // Accept image URLs directly from the frontend
-      const { imageUrls } = req.body as { imageUrls: Array<{ url: string; width: number; height: number; id: string }> };
+      const { imageUrls, deleteAfterImport } = req.body as { 
+        imageUrls: Array<{ url: string; width: number; height: number; id: string }>;
+        deleteAfterImport?: boolean;
+      };
       if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
         return res.status(400).json({ message: 'No images provided' });
       }
@@ -1044,11 +1047,21 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
       await storage.updateWorkflow(workflow.id, { images });
 
+      // Delete images from Civitai if requested
+      let deleteResult = null;
+      if (deleteAfterImport && images.length > 0) {
+        const idsToDelete = imageUrls.map(img => img.id);
+        console.log(`Deleting ${idsToDelete.length} images from Civitai...`);
+        deleteResult = await deleteGeneratedImages(apiKey, idsToDelete);
+        console.log(`Delete result: ${deleteResult.deleted} deleted, ${deleteResult.errors.length} errors`);
+      }
+
       res.json({
         workflowId: workflow.id,
         images,
         imported: images.length,
         total: imageUrls.length,
+        deleted: deleteResult?.deleted || 0,
       });
     } catch (error) {
       console.error('Civitai import error:', error);

@@ -89,8 +89,11 @@ export function UploadStep({
   const [civitaiImages, setCivitaiImages] = useState<CivitaiImageData[]>([]);
   const [civitaiLoading, setCivitaiLoading] = useState(false);
   const [civitaiNextCursor, setCivitaiNextCursor] = useState<string | undefined>();
+  const [civitaiPendingImages, setCivitaiPendingImages] = useState<CivitaiImageData[]>([]);
   const [selectedCivitaiImages, setSelectedCivitaiImages] = useState<Set<string>>(new Set());
   const [isImporting, setIsImporting] = useState(false);
+  const [deleteAfterImport, setDeleteAfterImport] = useState(false);
+  const [loadingTarget, setLoadingTarget] = useState<number | null>(null);
   
   // Folder browser state
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
@@ -135,36 +138,80 @@ export function UploadStep({
     }
   };
 
-  const loadCivitaiImages = async (reset = false) => {
+  const loadCivitaiImages = async (reset = false, targetCount?: number) => {
     if (civitaiLoading) return;
     
     setCivitaiLoading(true);
     setError(null);
+    if (targetCount) setLoadingTarget(targetCount);
     
     try {
-      const cursor = reset ? undefined : civitaiNextCursor;
-      const url = cursor 
-        ? `/api/civitai/images?cursor=${cursor}&limit=50`
-        : '/api/civitai/images?limit=50';
+      let allImages: CivitaiImageData[] = reset ? [] : [...civitaiImages];
+      let cursor = reset ? undefined : civitaiNextCursor;
+      let nextCursor: string | undefined = cursor;
       
-      const response = await fetch(url);
-      if (!response.ok) {
+      // Start with pending images from previous partial batch
+      let pendingBuffer: CivitaiImageData[] = reset ? [] : [...civitaiPendingImages];
+      
+      // Load until we reach target count or no more images
+      const target = targetCount || allImages.length + 50;
+      
+      while (allImages.length < target) {
+        // First, use any pending images from previous partial batch
+        if (pendingBuffer.length > 0) {
+          const remainingSlots = target - allImages.length;
+          const imagesToAdd = pendingBuffer.slice(0, remainingSlots);
+          allImages = [...allImages, ...imagesToAdd];
+          pendingBuffer = pendingBuffer.slice(remainingSlots);
+          
+          setCivitaiImages(allImages);
+          
+          if (allImages.length >= target) break;
+        }
+        
+        // If no more cursor and no pending images, we're done
+        if (!cursor && allImages.length > 0) break;
+        
+        const url = cursor 
+          ? `/api/civitai/images?cursor=${cursor}&limit=50`
+          : '/api/civitai/images?limit=50';
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.message || 'Failed to load images');
+        }
+        
         const data = await response.json();
-        throw new Error(data.message || 'Failed to load images');
+        const newImages = data.images as CivitaiImageData[];
+        nextCursor = data.metadata.nextCursor;
+        
+        // Add new images but don't exceed target
+        const remainingSlots = target - allImages.length;
+        const imagesToAdd = newImages.slice(0, remainingSlots);
+        const leftoverImages = newImages.slice(remainingSlots);
+        
+        allImages = [...allImages, ...imagesToAdd];
+        pendingBuffer = leftoverImages;
+        
+        // Update state
+        setCivitaiImages(allImages);
+        setCivitaiNextCursor(nextCursor);
+        
+        cursor = nextCursor;
+        
+        // If no more pages, break
+        if (!nextCursor) break;
       }
       
-      const data = await response.json();
+      // Save any leftover images for next load
+      setCivitaiPendingImages(pendingBuffer);
       
-      if (reset) {
-        setCivitaiImages(data.images);
-      } else {
-        setCivitaiImages(prev => [...prev, ...data.images]);
-      }
-      setCivitaiNextCursor(data.metadata.nextCursor);
     } catch (error: any) {
       setError(error.message || 'Failed to load Civitai images');
     } finally {
       setCivitaiLoading(false);
+      setLoadingTarget(null);
     }
   };
 
@@ -203,7 +250,10 @@ export function UploadStep({
       const response = await fetch('/api/civitai/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrls: selectedImagesData }),
+        body: JSON.stringify({ 
+          imageUrls: selectedImagesData,
+          deleteAfterImport 
+        }),
       });
       
       if (!response.ok) {
@@ -213,6 +263,12 @@ export function UploadStep({
       
       const data = await response.json();
       setFileName(`${data.imported} Civitai images`);
+      
+      // Remove imported images from the local list if delete was enabled
+      if (deleteAfterImport) {
+        setCivitaiImages(prev => prev.filter(img => !selectedCivitaiImages.has(img.id)));
+      }
+      
       setSelectedCivitaiImages(new Set());
       onUploadComplete(data.images, data.workflowId);
     } catch (error: any) {
@@ -1063,48 +1119,81 @@ export function UploadStep({
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary" className="text-xs">
-                          {civitaiStatus.username}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {civitaiImages.length} images loaded
-                        </span>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-xs">
+                            {civitaiStatus.username}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            {civitaiImages.length} images loaded
+                            {loadingTarget && ` (loading ${loadingTarget}...)`}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadCivitaiImages(true)}
+                            disabled={civitaiLoading}
+                            data-testid="button-refresh-civitai"
+                          >
+                            <RefreshCw className={cn("h-4 w-4 mr-2", civitaiLoading && "animate-spin")} />
+                            Refresh
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={selectAllCivitaiImages}
+                            disabled={civitaiImages.length === 0}
+                            data-testid="button-select-all-civitai"
+                          >
+                            {selectedCivitaiImages.size === civitaiImages.length ? 'Deselect All' : 'Select All'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={importCivitaiImages}
+                            disabled={selectedCivitaiImages.size === 0 || isImporting}
+                            data-testid="button-import-civitai"
+                          >
+                            {isImporting ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4 mr-2" />
+                            )}
+                            Import {selectedCivitaiImages.size > 0 && `(${selectedCivitaiImages.size})`}
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => loadCivitaiImages(true)}
-                          disabled={civitaiLoading}
-                          data-testid="button-refresh-civitai"
-                        >
-                          <RefreshCw className={cn("h-4 w-4 mr-2", civitaiLoading && "animate-spin")} />
-                          Refresh
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={selectAllCivitaiImages}
-                          disabled={civitaiImages.length === 0}
-                          data-testid="button-select-all-civitai"
-                        >
-                          {selectedCivitaiImages.size === civitaiImages.length ? 'Deselect All' : 'Select All'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={importCivitaiImages}
-                          disabled={selectedCivitaiImages.size === 0 || isImporting}
-                          data-testid="button-import-civitai"
-                        >
-                          {isImporting ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Download className="h-4 w-4 mr-2" />
-                          )}
-                          Import {selectedCivitaiImages.size > 0 && `(${selectedCivitaiImages.size})`}
-                        </Button>
+                      
+                      <div className="flex items-center justify-between flex-wrap gap-2 p-2 bg-muted/50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="delete-after-import"
+                            checked={deleteAfterImport}
+                            onCheckedChange={setDeleteAfterImport}
+                            data-testid="switch-delete-after-import"
+                          />
+                          <Label htmlFor="delete-after-import" className="text-sm cursor-pointer">
+                            Delete from Civitai after import
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Load:</span>
+                          {[40, 80, 120].map((count) => (
+                            <Button
+                              key={count}
+                              variant="outline"
+                              size="sm"
+                              onClick={() => loadCivitaiImages(true, count)}
+                              disabled={civitaiLoading}
+                              className="h-7 px-2 text-xs"
+                              data-testid={`button-load-${count}-civitai`}
+                            >
+                              {count}
+                            </Button>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -1154,19 +1243,25 @@ export function UploadStep({
                           </div>
                         </ScrollArea>
 
-                        {civitaiNextCursor && (
-                          <div className="flex justify-center">
-                            <Button
-                              variant="outline"
-                              onClick={() => loadCivitaiImages(false)}
-                              disabled={civitaiLoading}
-                              data-testid="button-load-more-civitai"
-                            >
-                              {civitaiLoading ? (
-                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              ) : null}
-                              Load More
-                            </Button>
+                        {civitaiNextCursor && civitaiImages.length > 0 && (
+                          <div className="flex justify-center gap-2 flex-wrap">
+                            <span className="text-xs text-muted-foreground self-center">Load more:</span>
+                            {[40, 80, 120].map((count) => (
+                              <Button
+                                key={count}
+                                variant="outline"
+                                size="sm"
+                                onClick={() => loadCivitaiImages(false, civitaiImages.length + count)}
+                                disabled={civitaiLoading}
+                                className="h-7 px-3 text-xs"
+                                data-testid={`button-load-more-${count}-civitai`}
+                              >
+                                {civitaiLoading && loadingTarget === civitaiImages.length + count ? (
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                ) : null}
+                                +{count}
+                              </Button>
+                            ))}
                           </div>
                         )}
                       </>
