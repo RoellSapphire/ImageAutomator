@@ -834,8 +834,11 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
       if (wordpressConfig.armemberPlanId) {
         try {
-          // ARMember uses post meta to restrict content to specific plans
-          // The meta key format is arm_access_plan_{plan_id} with value '1'
+          // ARMember uses post meta 'arm_access_plan_ids' as an array of plan IDs
+          // And 'arm_restrict_post' to enable restriction
+          const planIds = wordpressConfig.armemberPlanId.split(',').map((id: string) => id.trim());
+          
+          // First try: Update post meta directly
           const metaResponse = await fetch(`${wordpressConfig.siteUrl}/wp-json/wp/v2/posts/${post.id}`, {
             method: 'POST',
             headers: {
@@ -844,29 +847,34 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
             },
             body: JSON.stringify({
               meta: {
-                [`arm_access_plan_${wordpressConfig.armemberPlanId}`]: '1',
+                'arm_access_plan_ids': planIds,
                 'arm_restrict_post': '1',
               },
             }),
           });
           
           if (!metaResponse.ok) {
-            console.log('ARMember meta update failed, status:', metaResponse.status);
-            // Try alternative approach using WordPress meta endpoint
-            const altMetaResponse = await fetch(`${wordpressConfig.siteUrl}/wp-json/wp/v2/posts/${post.id}/meta`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Basic ${auth}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                key: `arm_access_plan_${wordpressConfig.armemberPlanId}`,
-                value: '1',
-              }),
-            });
-            console.log('Alt meta response:', altMetaResponse.status);
+            console.log('ARMember meta update via post failed, status:', metaResponse.status);
+            
+            // Try alternative: Use the ARMember API endpoint if available
+            const armemberApiKey = wordpressConfig.armemberApiKey;
+            if (armemberApiKey) {
+              const armUrl = `${wordpressConfig.siteUrl}/wp-json/armember/v1/arm_restrict_post?arm_api_key=${armemberApiKey}`;
+              const armResponse = await fetch(armUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Basic ${auth}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  post_id: post.id,
+                  plan_ids: planIds,
+                }),
+              });
+              console.log('ARMember API restrict response:', armResponse.status);
+            }
           } else {
-            console.log('ARMember restriction applied via post meta');
+            console.log('ARMember restriction applied via post meta for plans:', planIds);
           }
         } catch (restrictError) {
           console.log('ARMember restriction not set:', restrictError);
@@ -1122,11 +1130,25 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       let deleteResult = null;
       if (deleteAfterImport && images.length > 0) {
         // Get unique batch IDs (multiple images may share the same batch)
-        const batchIds = new Set(imageUrls.map(img => img.batchId || img.id.split('_')[0]));
+        // For compound IDs like "workflowId_stepIndex_imageIndex", extract workflowId
+        const batchIds = new Set(imageUrls.map(img => {
+          if (img.batchId) return img.batchId;
+          // Extract the original workflow ID from compound ID
+          const parts = img.id.split('_');
+          // If it looks like a compound ID (has underscores), get everything before last 2 parts
+          if (parts.length >= 3) {
+            // Rejoin all parts except last 2 (stepIndex and imageIndex)
+            return parts.slice(0, -2).join('_');
+          }
+          return img.id;
+        }));
         const idsToDelete = Array.from(batchIds);
-        console.log(`Deleting ${idsToDelete.length} batch(es) from Civitai...`);
+        console.log(`Deleting ${idsToDelete.length} batch(es) from Civitai:`, idsToDelete);
         deleteResult = await deleteGeneratedImages(apiKey, idsToDelete);
         console.log(`Delete result: ${deleteResult.deleted} deleted, ${deleteResult.errors.length} errors`);
+        if (deleteResult.errors.length > 0) {
+          console.log('Delete errors:', deleteResult.errors);
+        }
       }
 
       res.json({
@@ -1328,8 +1350,8 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
   app.post('/api/deviantart/upload', async (req: Request, res: Response) => {
     const { imageId, title, description, category, isMature, workflowId } = req.body;
     
-    const settings = await storage.getUserSettings();
-    const tokens = settings.deviantartTokens;
+    let settings = await storage.getUserSettings();
+    let tokens = settings.deviantartTokens;
     
     if (!tokens?.accessToken) {
       return res.status(400).json({ message: 'Not connected to DeviantArt' });
@@ -1340,37 +1362,118 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
     }
     
     try {
+      // Check if token is expired and refresh if needed
+      if (tokens.expiresAt && tokens.expiresAt < Date.now() && tokens.refreshToken) {
+        console.log('DeviantArt token expired, refreshing...');
+        const clientId = process.env.DEVIANTART_CLIENT_ID;
+        const clientSecret = process.env.DEVIANTART_CLIENT_SECRET;
+        
+        if (clientId && clientSecret) {
+          try {
+            const newTokens = await deviantart.refreshAccessToken(
+              tokens.refreshToken,
+              clientId,
+              clientSecret
+            );
+            tokens = {
+              accessToken: newTokens.access_token,
+              refreshToken: newTokens.refresh_token,
+              expiresAt: Date.now() + newTokens.expires_in * 1000,
+            };
+            settings.deviantartTokens = tokens;
+            await storage.saveUserSettings(settings);
+            console.log('DeviantArt token refreshed successfully');
+          } catch (refreshError) {
+            console.error('Failed to refresh DeviantArt token:', refreshError);
+            return res.status(401).json({ message: 'DeviantArt session expired. Please reconnect.' });
+          }
+        }
+      }
+      
       // Find the image in storage
       const image = await storage.findImageById(imageId);
       
       if (!image) {
-        return res.status(404).json({ message: 'Image not found' });
+        console.log('Image not found in storage:', imageId);
+        return res.status(404).json({ message: 'Image not found. Please re-upload the images.' });
       }
       
       // Read file from disk - use processedPath if available, otherwise originalPath
       const filePath = image.processedPath || image.originalPath;
+      console.log('Reading image from:', filePath);
+      
       const fs = await import('fs/promises');
       const imageBuffer = await fs.readFile(filePath);
       
-      const result = await deviantart.uploadAndPublish(
-        tokens.accessToken,
-        imageBuffer,
-        image.newName || image.originalName || 'image.png',
-        title || image.newName || image.originalName || 'Untitled',
-        description || '',
-        category || 'digitalart/drawings',
-        isMature || false
-      );
+      console.log('Uploading to DeviantArt:', { title, filename: image.newName || image.originalName, size: imageBuffer.length });
       
-      console.log('DeviantArt upload success:', result.publishResponse.url);
-      
-      res.json({ 
-        success: true, 
-        url: result.publishResponse.url,
-        deviationId: result.publishResponse.deviationid,
-      });
+      try {
+        const result = await deviantart.uploadAndPublish(
+          tokens.accessToken,
+          imageBuffer,
+          image.newName || image.originalName || 'image.png',
+          title || image.newName || image.originalName || 'Untitled',
+          description || '',
+          category || 'digitalart/drawings',
+          isMature || false
+        );
+        
+        console.log('DeviantArt upload success:', result.publishResponse.url);
+        
+        return res.json({ 
+          success: true, 
+          url: result.publishResponse.url,
+          deviationId: result.publishResponse.deviationid,
+        });
+      } catch (uploadError: any) {
+        // If the error suggests token issues, try refreshing and retrying once
+        if (uploadError.message?.includes('invalid_token') || uploadError.message?.includes('unauthorized')) {
+          console.log('DeviantArt token might be expired, attempting refresh...');
+          const clientId = process.env.DEVIANTART_CLIENT_ID;
+          const clientSecret = process.env.DEVIANTART_CLIENT_SECRET;
+          
+          if (clientId && clientSecret && tokens.refreshToken) {
+            try {
+              const newTokens = await deviantart.refreshAccessToken(
+                tokens.refreshToken,
+                clientId,
+                clientSecret
+              );
+              tokens = {
+                accessToken: newTokens.access_token,
+                refreshToken: newTokens.refresh_token,
+                expiresAt: Date.now() + newTokens.expires_in * 1000,
+              };
+              settings.deviantartTokens = tokens;
+              await storage.saveUserSettings(settings);
+              
+              // Retry upload with new token
+              const retryResult = await deviantart.uploadAndPublish(
+                tokens.accessToken,
+                imageBuffer,
+                image.newName || image.originalName || 'image.png',
+                title || image.newName || image.originalName || 'Untitled',
+                description || '',
+                category || 'digitalart/drawings',
+                isMature || false
+              );
+              
+              console.log('DeviantArt upload success after token refresh:', retryResult.publishResponse.url);
+              
+              return res.json({ 
+                success: true, 
+                url: retryResult.publishResponse.url,
+                deviationId: retryResult.publishResponse.deviationid,
+              });
+            } catch (refreshError) {
+              console.error('Token refresh failed:', refreshError);
+            }
+          }
+        }
+        throw uploadError;
+      }
     } catch (error: any) {
-      console.error('DeviantArt upload error:', error);
+      console.error('DeviantArt upload error:', error.message || error);
       res.status(500).json({ message: error.message || 'Upload failed' });
     }
   });
