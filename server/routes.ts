@@ -10,6 +10,7 @@ import { randomUUID } from "crypto";
 import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage } from "@shared/schema";
 import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
 import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
+import * as deviantart from "./deviantart";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -1066,6 +1067,183 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
     } catch (error) {
       console.error('Civitai import error:', error);
       res.status(500).json({ message: 'Failed to import Civitai images' });
+    }
+  });
+
+  // DeviantArt OAuth routes
+  app.get('/api/deviantart/auth-url', (req: Request, res: Response) => {
+    const clientId = process.env.DEVIANTART_CLIENT_ID;
+    if (!clientId) {
+      return res.status(400).json({ message: 'DeviantArt client ID not configured' });
+    }
+    
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/deviantart/callback`;
+    const state = randomUUID();
+    const authUrl = deviantart.getAuthUrl(clientId, redirectUri, state);
+    
+    res.json({ authUrl, state });
+  });
+
+  app.get('/api/deviantart/callback', async (req: Request, res: Response) => {
+    const { code, state } = req.query;
+    
+    if (!code || typeof code !== 'string') {
+      return res.redirect('/?error=deviantart_auth_failed');
+    }
+
+    const clientId = process.env.DEVIANTART_CLIENT_ID;
+    const clientSecret = process.env.DEVIANTART_CLIENT_SECRET;
+    
+    if (!clientId || !clientSecret) {
+      return res.redirect('/?error=deviantart_not_configured');
+    }
+
+    try {
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/deviantart/callback`;
+      const tokens = await deviantart.exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
+      
+      // Store tokens in settings
+      const settings = await storage.getUserSettings();
+      settings.deviantartTokens = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: Date.now() + tokens.expires_in * 1000,
+      };
+      await storage.saveUserSettings(settings);
+      
+      res.redirect('/?deviantart=connected');
+    } catch (error) {
+      console.error('DeviantArt OAuth error:', error);
+      res.redirect('/?error=deviantart_auth_failed');
+    }
+  });
+
+  app.get('/api/deviantart/status', async (req: Request, res: Response) => {
+    const settings = await storage.getUserSettings();
+    const tokens = settings.deviantartTokens;
+    
+    if (!tokens || !tokens.accessToken) {
+      return res.json({ connected: false });
+    }
+    
+    // Check if token is expired
+    if (tokens.expiresAt && Date.now() > tokens.expiresAt) {
+      // Try to refresh
+      const clientId = process.env.DEVIANTART_CLIENT_ID;
+      const clientSecret = process.env.DEVIANTART_CLIENT_SECRET;
+      
+      if (clientId && clientSecret && tokens.refreshToken) {
+        try {
+          const newTokens = await deviantart.refreshAccessToken(tokens.refreshToken, clientId, clientSecret);
+          settings.deviantartTokens = {
+            accessToken: newTokens.access_token,
+            refreshToken: newTokens.refresh_token,
+            expiresAt: Date.now() + newTokens.expires_in * 1000,
+          };
+          await storage.saveUserSettings(settings);
+          return res.json({ connected: true });
+        } catch (error) {
+          console.error('Failed to refresh DeviantArt token:', error);
+          return res.json({ connected: false, error: 'Token expired' });
+        }
+      }
+      return res.json({ connected: false, error: 'Token expired' });
+    }
+    
+    res.json({ connected: true });
+  });
+
+  app.post('/api/deviantart/disconnect', async (req: Request, res: Response) => {
+    const settings = await storage.getUserSettings();
+    delete settings.deviantartTokens;
+    await storage.saveUserSettings(settings);
+    res.json({ success: true });
+  });
+
+  // DeviantArt scheduled uploads
+  app.get('/api/deviantart/scheduled', async (req: Request, res: Response) => {
+    const uploads = await deviantart.getScheduledUploads();
+    res.json({ 
+      uploads,
+      schedulerRunning: deviantart.isSchedulerRunning(),
+    });
+  });
+
+  app.post('/api/deviantart/schedule', async (req: Request, res: Response) => {
+    const { imageUrl, title, description, category, isMature, scheduledTime } = req.body;
+    
+    if (!imageUrl) {
+      return res.status(400).json({ message: 'Image URL required' });
+    }
+    
+    const upload = await deviantart.addScheduledUpload({
+      imageUrl: imageUrl,
+      title: title || 'Untitled',
+      description: description || '',
+      category: category || 'digitalart/drawings',
+      isMature: isMature || false,
+      scheduledTime: new Date(scheduledTime || Date.now()).toISOString(),
+    });
+    
+    res.json({ success: true, upload });
+  });
+
+  app.delete('/api/deviantart/scheduled/:id', async (req: Request, res: Response) => {
+    const success = await deviantart.removeScheduledUpload(req.params.id);
+    res.json({ success });
+  });
+
+  app.post('/api/deviantart/scheduler/start', async (req: Request, res: Response) => {
+    const { intervalMinutes } = req.body;
+    const settings = await storage.getUserSettings();
+    const tokens = settings.deviantartTokens;
+    
+    if (!tokens?.accessToken) {
+      return res.status(400).json({ message: 'Not connected to DeviantArt' });
+    }
+    
+    deviantart.startScheduler(tokens.accessToken, intervalMinutes || 60);
+    res.json({ success: true, message: 'Scheduler started' });
+  });
+
+  app.post('/api/deviantart/scheduler/stop', (req: Request, res: Response) => {
+    deviantart.stopScheduler();
+    res.json({ success: true, message: 'Scheduler stopped' });
+  });
+
+  app.post('/api/deviantart/upload', async (req: Request, res: Response) => {
+    const { imageUrl, title, description, category, isMature } = req.body;
+    
+    const settings = await storage.getUserSettings();
+    const tokens = settings.deviantartTokens;
+    
+    if (!tokens?.accessToken) {
+      return res.status(400).json({ message: 'Not connected to DeviantArt' });
+    }
+    
+    try {
+      // Download image
+      const imageResponse = await fetch(imageUrl);
+      const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+      
+      const result = await deviantart.uploadAndPublish(
+        tokens.accessToken,
+        imageBuffer,
+        'image.png',
+        title || 'Untitled',
+        description || '',
+        category || 'digitalart/drawings',
+        isMature || false
+      );
+      
+      res.json({ 
+        success: true, 
+        url: result.publishResponse.url,
+        deviationId: result.publishResponse.deviationid,
+      });
+    } catch (error: any) {
+      console.error('DeviantArt upload error:', error);
+      res.status(500).json({ message: error.message || 'Upload failed' });
     }
   });
 

@@ -179,3 +179,28 @@ export const armemberPlanSchema = z.object({
 });
 
 export type ARMemberPlan = z.infer<typeof armemberPlanSchema>;
+
+// DeviantArt OAuth Tokens
+export const deviantartTokensSchema = z.object({
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  expiresAt: z.number(),
+});
+
+export type DeviantArtTokens = z.infer<typeof deviantartTokensSchema>;
+
+// DeviantArt Scheduled Upload
+export const scheduledUploadSchema = z.object({
+  id: z.string(),
+  imageUrl: z.string(),
+  title: z.string(),
+  description: z.string(),
+  category: z.string(),
+  isMature: z.boolean(),
+  scheduledTime: z.string(),
+  status: z.enum(["pending", "uploading", "published", "failed"]),
+  publishedUrl: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export type ScheduledUpload = z.infer<typeof scheduledUploadSchema>;

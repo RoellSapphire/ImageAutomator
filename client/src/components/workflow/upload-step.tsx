@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles } from "lucide-react";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DriveFolder {
@@ -146,72 +146,51 @@ export function UploadStep({
     if (targetCount) setLoadingTarget(targetCount);
     
     try {
-      // When reset=true, start completely fresh - don't read from any existing state
-      // This is important because setState is async and closure would read stale values
-      let allImages: CivitaiImageData[] = reset ? [] : [...civitaiImages];
-      let cursor: string | undefined = reset ? undefined : civitaiNextCursor;
-      let nextCursor: string | undefined = undefined;
-      let pendingBuffer: CivitaiImageData[] = reset ? [] : [...civitaiPendingImages];
+      // Fetch all available images first (up to a reasonable limit), then take what we need
+      // This ensures we always get the newest images regardless of API pagination order
+      const allFetchedImages: CivitaiImageData[] = [];
+      let cursor: string | undefined = undefined;
+      const maxFetch = Math.max(targetCount || 50, 200); // Fetch at least 200 to have a good pool
       
-      // Also clear state for reset
-      if (reset) {
-        setCivitaiImages([]);
-        setCivitaiNextCursor(undefined);
-        setCivitaiPendingImages([]);
-      }
-      
-      // Load until we reach target count or no more images
-      const target = targetCount || 50;
-      
-      while (allImages.length < target) {
-        // First, use any pending images from previous partial batch
-        if (pendingBuffer.length > 0) {
-          const remainingSlots = target - allImages.length;
-          const imagesToAdd = pendingBuffer.slice(0, remainingSlots);
-          allImages = [...allImages, ...imagesToAdd];
-          pendingBuffer = pendingBuffer.slice(remainingSlots);
-          
-          setCivitaiImages(allImages);
-          
-          if (allImages.length >= target) break;
-        }
-        
-        // If no more cursor and no pending images, we're done
-        if (!cursor && allImages.length > 0) break;
-        
-        const url = cursor 
+      // Always fetch fresh from the beginning to get newest images
+      while (allFetchedImages.length < maxFetch) {
+        const fetchUrl: string = cursor 
           ? `/api/civitai/images?cursor=${cursor}&limit=50`
           : '/api/civitai/images?limit=50';
         
-        const response = await fetch(url);
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.message || 'Failed to load images');
+        const fetchResponse: Response = await fetch(fetchUrl);
+        if (!fetchResponse.ok) {
+          const errorData = await fetchResponse.json();
+          throw new Error(errorData.message || 'Failed to load images');
         }
         
-        const data = await response.json();
-        const newImages = data.images as CivitaiImageData[];
-        nextCursor = data.metadata.nextCursor;
+        const responseData = await fetchResponse.json();
+        const newImages = responseData.images as CivitaiImageData[];
         
-        // Add new images but don't exceed target
-        const remainingSlots = target - allImages.length;
-        const imagesToAdd = newImages.slice(0, remainingSlots);
-        const leftoverImages = newImages.slice(remainingSlots);
+        if (newImages.length === 0) break;
         
-        allImages = [...allImages, ...imagesToAdd];
-        pendingBuffer = leftoverImages;
-        
-        // Update state
-        setCivitaiImages(allImages);
-        setCivitaiNextCursor(nextCursor);
-        
-        cursor = nextCursor;
+        allFetchedImages.push(...newImages);
+        cursor = responseData.metadata.nextCursor;
         
         // If no more pages, break
-        if (!nextCursor) break;
+        if (!cursor) break;
       }
       
-      // Save any leftover images for next load
+      // Sort all fetched images by createdAt descending (newest first)
+      allFetchedImages.sort((a, b) => {
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return dateB - dateA;
+      });
+      
+      // Take only the target count from the sorted list
+      const target = targetCount || 50;
+      const resultImages = allFetchedImages.slice(0, target);
+      const pendingBuffer = allFetchedImages.slice(target);
+      
+      // Update state
+      setCivitaiImages(resultImages);
+      setCivitaiNextCursor(cursor);
       setCivitaiPendingImages(pendingBuffer);
       
     } catch (error: any) {
@@ -1219,9 +1198,18 @@ export function UploadStep({
                       </div>
                     ) : (
                       <>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <ArrowUpDown className="h-3 w-3" />
+                            <span>Sorted by: Newest first</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {civitaiImages.length} images loaded
+                          </div>
+                        </div>
                         <ScrollArea className="h-[400px] border rounded-lg p-2">
                           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-                            {civitaiImages.map((image) => (
+                            {civitaiImages.map((image, index) => (
                               <div
                                 key={image.id}
                                 className={cn(
@@ -1238,6 +1226,14 @@ export function UploadStep({
                                   className="w-full h-full object-cover"
                                   loading="lazy"
                                 />
+                                <div className="absolute top-1 left-1 bg-black/70 text-white text-[10px] px-1 rounded">
+                                  #{index + 1}
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1">
+                                  <p className="text-[9px] text-white/80 truncate">
+                                    {new Date(image.createdAt).toLocaleDateString()} {new Date(image.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                  </p>
+                                </div>
                                 {selectedCivitaiImages.has(image.id) && (
                                   <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
                                     <div className="bg-primary rounded-full p-1">

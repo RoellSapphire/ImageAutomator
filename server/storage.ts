@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type WorkflowState, type ProcessedImage, type RenameConfig, type EnhanceConfig, type DriveConfig, type WordPressConfig, type DescriptionTemplate, type AutoModeSettings } from "@shared/schema";
+import { type User, type InsertUser, type WorkflowState, type ProcessedImage, type RenameConfig, type EnhanceConfig, type DriveConfig, type WordPressConfig, type DescriptionTemplate, type AutoModeSettings, type DeviantArtTokens, type ScheduledUpload } from "@shared/schema";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
@@ -10,6 +10,8 @@ export interface UserSettings {
   wordpressConfig?: Partial<WordPressConfig>;
   autoModeSettings?: AutoModeSettings;
   descriptionTemplates?: DescriptionTemplate[];
+  deviantartTokens?: DeviantArtTokens;
+  scheduledUploads?: ScheduledUpload[];
 }
 
 export interface IStorage {
