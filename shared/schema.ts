@@ -160,6 +160,7 @@ export const autoModeSettingsSchema = z.object({
   selectedTemplateId: z.string().optional(),
   skipExport: z.boolean().default(false),
   skipPublish: z.boolean().default(false),
+  skipDeviantArt: z.boolean().default(false),
 });
 
 export type AutoModeSettings = z.infer<typeof autoModeSettingsSchema>;

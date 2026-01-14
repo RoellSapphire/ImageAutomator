@@ -558,6 +558,15 @@ export function UploadStep({
                 />
                 <Label htmlFor="skip-publish" className="text-sm">Skip WordPress publish</Label>
               </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="skip-deviantart"
+                  checked={autoModeSettings.skipDeviantArt}
+                  onCheckedChange={(skipDeviantArt) => onAutoModeChange({ ...autoModeSettings, skipDeviantArt })}
+                  data-testid="switch-skip-deviantart"
+                />
+                <Label htmlFor="skip-deviantart" className="text-sm">Skip DeviantArt upload</Label>
+              </div>
             </div>
             {isAutoRunning && (
               <div className="flex items-center gap-2 text-primary text-sm mt-2">
