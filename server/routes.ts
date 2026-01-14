@@ -1260,14 +1260,23 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
   });
 
   app.post('/api/deviantart/schedule', async (req: Request, res: Response) => {
-    const { imageUrl, title, description, category, isMature, scheduledTime } = req.body;
+    const { imageId, title, description, category, isMature, scheduledTime } = req.body;
     
-    if (!imageUrl) {
-      return res.status(400).json({ message: 'Image URL required' });
+    if (!imageId) {
+      return res.status(400).json({ message: 'Image ID required' });
     }
     
+    // Look up the image to get the file path for persistence across restarts
+    const image = await storage.findImageById(imageId);
+    if (!image) {
+      return res.status(404).json({ message: 'Image not found' });
+    }
+    
+    const filePath = image.processedPath || image.originalPath;
+    
     const upload = await deviantart.addScheduledUpload({
-      imageUrl: imageUrl,
+      imageUrl: imageId,
+      filePath: filePath, // Store actual file path for persistence
       title: title || 'Untitled',
       description: description || '',
       category: category || 'digitalart/drawings',
@@ -1302,7 +1311,7 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
   });
 
   app.post('/api/deviantart/upload', async (req: Request, res: Response) => {
-    const { imageUrl, title, description, category, isMature } = req.body;
+    const { imageId, title, description, category, isMature, workflowId } = req.body;
     
     const settings = await storage.getUserSettings();
     const tokens = settings.deviantartTokens;
@@ -1311,20 +1320,34 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       return res.status(400).json({ message: 'Not connected to DeviantArt' });
     }
     
+    if (!imageId) {
+      return res.status(400).json({ message: 'Image ID is required' });
+    }
+    
     try {
-      // Download image
-      const imageResponse = await fetch(imageUrl);
-      const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+      // Find the image in storage
+      const image = await storage.findImageById(imageId);
+      
+      if (!image) {
+        return res.status(404).json({ message: 'Image not found' });
+      }
+      
+      // Read file from disk - use processedPath if available, otherwise originalPath
+      const filePath = image.processedPath || image.originalPath;
+      const fs = await import('fs/promises');
+      const imageBuffer = await fs.readFile(filePath);
       
       const result = await deviantart.uploadAndPublish(
         tokens.accessToken,
         imageBuffer,
-        'image.png',
-        title || 'Untitled',
+        image.newName || image.originalName || 'image.png',
+        title || image.newName || image.originalName || 'Untitled',
         description || '',
         category || 'digitalart/drawings',
         isMature || false
       );
+      
+      console.log('DeviantArt upload success:', result.publishResponse.url);
       
       res.json({ 
         success: true, 

@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { Globe, Lock, Eye, CheckCircle, AlertCircle, Loader2, ExternalLink, Play, Square, Clock, Trash2, Upload } from "lucide-react";
+import { Globe, Lock, Eye, CheckCircle, AlertCircle, Loader2, ExternalLink, Play, Square, Clock, Trash2, Upload, UploadCloud } from "lucide-react";
 import { SiDeviantart } from "react-icons/si";
+import { useToast } from "@/hooks/use-toast";
 import type { WordPressConfig, ProcessedImage, ARMemberPlan } from "@/lib/types";
 
 interface ScheduledUpload {
@@ -60,6 +61,7 @@ export function PublishStep({
   skipDeviantart,
   onSkipDeviantartChange
 }: PublishStepProps) {
+  const { toast } = useToast();
   const [localConfig, setLocalConfig] = useState<WordPressConfig>(config);
   const [showPassword, setShowPassword] = useState(false);
   
@@ -163,7 +165,7 @@ export function PublishStep({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageUrl: `/api/thumbnail/${image.id}`,
+          imageId: image.id,
           title: image.newName || image.originalName,
           description: 'Uploaded via Civitai Flow',
           category: 'digitalart/drawings',
@@ -172,16 +174,65 @@ export function PublishStep({
       });
       const data = await response.json();
       if (data.success) {
-        alert('Uploaded to DeviantArt successfully!');
+        toast({
+          title: "Uploaded to DeviantArt",
+          description: data.url ? `View at: ${data.url}` : "Image published successfully",
+        });
       } else {
-        alert('Upload failed: ' + (data.message || 'Unknown error'));
+        toast({
+          title: "Upload failed",
+          description: data.message || 'Unknown error',
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('DeviantArt upload error:', error);
-      alert('Failed to upload to DeviantArt');
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload to DeviantArt",
+        variant: "destructive",
+      });
     } finally {
       setUploadingToDA(false);
     }
+  };
+  
+  const uploadAllToDeviantArt = async () => {
+    if (images.length === 0) return;
+    setUploadingToDA(true);
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (const image of images) {
+      try {
+        const response = await fetch('/api/deviantart/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageId: image.id,
+            title: image.newName || image.originalName,
+            description: 'Uploaded via Civitai Flow',
+            category: 'digitalart/drawings',
+            isMature: false,
+          }),
+        });
+        const data = await response.json();
+        if (data.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+    }
+    
+    toast({
+      title: "Batch upload complete",
+      description: `${successCount} uploaded, ${failCount} failed`,
+      variant: failCount > 0 ? "destructive" : "default",
+    });
+    setUploadingToDA(false);
   };
   
   const scheduleUpload = async (image: ProcessedImage, scheduledTime: Date) => {
@@ -190,7 +241,7 @@ export function PublishStep({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageUrl: `/api/thumbnail/${image.id}`,
+          imageId: image.id,
           title: image.newName || image.originalName,
           description: 'Scheduled via Civitai Flow',
           category: 'digitalart/drawings',
@@ -200,10 +251,19 @@ export function PublishStep({
       });
       const data = await response.json();
       if (data.success) {
+        toast({
+          title: "Scheduled",
+          description: `Image scheduled for ${scheduledTime.toLocaleString()}`,
+        });
         fetchScheduledUploads();
       }
     } catch (error) {
       console.error('Failed to schedule upload:', error);
+      toast({
+        title: "Schedule failed",
+        description: "Failed to schedule upload",
+        variant: "destructive",
+      });
     }
   };
   
@@ -755,6 +815,21 @@ export function PublishStep({
                     +{images.length - 9} more images
                   </p>
                 )}
+                <div className="mt-4 flex gap-2">
+                  <Button
+                    onClick={uploadAllToDeviantArt}
+                    disabled={uploadingToDA || images.length === 0}
+                    className="flex-1"
+                    data-testid="button-upload-all-da"
+                  >
+                    {uploadingToDA ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <UploadCloud className="h-4 w-4 mr-2" />
+                    )}
+                    Upload All ({images.length})
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}

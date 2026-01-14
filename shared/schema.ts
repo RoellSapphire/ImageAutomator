@@ -195,7 +195,8 @@ export type DeviantArtTokens = z.infer<typeof deviantartTokensSchema>;
 // DeviantArt Scheduled Upload
 export const scheduledUploadSchema = z.object({
   id: z.string(),
-  imageUrl: z.string(),
+  imageUrl: z.string(), // Legacy: could be URL or imageId
+  filePath: z.string().optional(), // Direct file path for persistence across restarts
   title: z.string(),
   description: z.string(),
   category: z.string(),

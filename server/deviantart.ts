@@ -260,13 +260,65 @@ export function startScheduler(
       await updateScheduledUpload(upload.id, { status: 'uploading' });
       
       try {
-        const response = await fetch(upload.imageUrl);
-        const imageBuffer = Buffer.from(await response.arrayBuffer());
+        const fs = await import('fs/promises');
+        let imageBuffer: Buffer;
+        let filename = upload.title || `image_${upload.id}.png`;
+        
+        // Try to use stored filePath first (new format), then fall back to storage lookup
+        if (upload.filePath) {
+          // New format: use stored file path directly
+          try {
+            imageBuffer = await fs.readFile(upload.filePath);
+          } catch (e) {
+            throw new Error(`File not found at stored path: ${upload.filePath}`);
+          }
+        } else {
+          // Legacy format or fallback: try to look up from storage
+          const imageId = upload.imageUrl;
+          
+          // Check if it looks like a full URL (legacy) vs an imageId
+          if (imageId.startsWith('http://') || imageId.startsWith('https://')) {
+            // Legacy absolute URL format - fetch directly
+            try {
+              const response = await fetch(imageId);
+              if (!response.ok) throw new Error(`HTTP ${response.status}`);
+              imageBuffer = Buffer.from(await response.arrayBuffer());
+            } catch (e) {
+              throw new Error(`Failed to fetch legacy URL: ${imageId}`);
+            }
+          } else if (imageId.startsWith('/api/')) {
+            // Relative API path - cannot reliably resolve after restart
+            // Try to look up by extracting imageId from path
+            const match = imageId.match(/\/api\/thumbnail\/([^/]+)/);
+            if (match) {
+              const extractedId = match[1];
+              const image = await storage.findImageById(extractedId);
+              if (image) {
+                const filePath = image.processedPath || image.originalPath;
+                imageBuffer = await fs.readFile(filePath);
+                filename = image.newName || image.originalName || filename;
+              } else {
+                throw new Error(`Legacy upload cannot be processed after restart. Image no longer in memory: ${imageId}`);
+              }
+            } else {
+              throw new Error(`Legacy upload cannot be processed after restart: ${imageId}`);
+            }
+          } else {
+            // Treat as imageId - look up from storage
+            const image = await storage.findImageById(imageId);
+            if (!image) {
+              throw new Error(`Image not found in memory: ${imageId}. Scheduled uploads require filePath for persistence.`);
+            }
+            const filePath = image.processedPath || image.originalPath;
+            imageBuffer = await fs.readFile(filePath);
+            filename = image.newName || image.originalName || filename;
+          }
+        }
 
         const result = await uploadAndPublish(
           accessToken,
           imageBuffer,
-          `image_${upload.id}.png`,
+          filename,
           upload.title,
           upload.description,
           upload.category,
@@ -277,6 +329,8 @@ export function startScheduler(
           status: 'published',
           publishedUrl: result.publishResponse.url,
         });
+        
+        console.log(`Scheduler: Uploaded ${upload.title} to DeviantArt`);
         
         if (onUploadComplete) {
           const updated = await getScheduledUploads();

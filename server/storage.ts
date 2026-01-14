@@ -25,6 +25,7 @@ export interface IStorage {
   addImages(workflowId: string, images: ProcessedImage[]): Promise<void>;
   updateImages(workflowId: string, images: ProcessedImage[]): Promise<void>;
   deleteWorkflow(id: string): Promise<void>;
+  findImageById(imageId: string): Promise<ProcessedImage | undefined>;
   
   getUserSettings(): Promise<UserSettings>;
   saveUserSettings(settings: UserSettings): Promise<void>;
@@ -130,6 +131,15 @@ export class MemStorage implements IStorage {
 
   async deleteWorkflow(id: string): Promise<void> {
     this.workflows.delete(id);
+  }
+
+  async findImageById(imageId: string): Promise<ProcessedImage | undefined> {
+    const workflows = Array.from(this.workflows.values());
+    for (const workflow of workflows) {
+      const image = workflow.images.find((img: ProcessedImage) => img.id === imageId);
+      if (image) return image;
+    }
+    return undefined;
   }
 }
 
