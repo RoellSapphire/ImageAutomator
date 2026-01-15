@@ -38,9 +38,9 @@
     "selectedTemplateId": "5",
     "skipRename": true,
     "skipEnhance": true,
-    "skipExport": false,
+    "skipExport": true,
     "skipPublish": false,
-    "skipDeviantArt": false,
+    "skipDeviantArt": true,
     "skipDiscord": true
   },
   "descriptionTemplates": [
