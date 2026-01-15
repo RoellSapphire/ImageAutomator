@@ -208,3 +208,15 @@ export const scheduledUploadSchema = z.object({
 });
 
 export type ScheduledUpload = z.infer<typeof scheduledUploadSchema>;
+
+// Discord Webhook Preset
+export const discordWebhookSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  webhookUrl: z.string().url(),
+  defaultMessage: z.string().optional(),
+});
+
+export type DiscordWebhook = z.infer<typeof discordWebhookSchema>;
+export const insertDiscordWebhookSchema = discordWebhookSchema.omit({ id: true });
+export type InsertDiscordWebhook = z.infer<typeof insertDiscordWebhookSchema>;

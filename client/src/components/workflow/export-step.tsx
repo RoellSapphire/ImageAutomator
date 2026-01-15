@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { FolderOpen, Cloud, CheckCircle, AlertCircle, Loader2, Download, ChevronRight, Home, ArrowLeft, Ban, MessageCircle, Send, Hash } from "lucide-react";
+import { FolderOpen, Cloud, CheckCircle, AlertCircle, Loader2, Download, ChevronRight, Home, ArrowLeft, Ban, MessageCircle, Send, Hash, Plus, Trash2, Settings } from "lucide-react";
 import { SiDiscord } from "react-icons/si";
 import type { DriveConfig, ProcessedImage } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +31,13 @@ interface DiscordChannel {
   id: string;
   name: string;
   type: number;
+}
+
+interface DiscordWebhook {
+  id: string;
+  name: string;
+  webhookUrl: string;
+  defaultMessage?: string;
 }
 
 interface ExportStepProps {
@@ -69,12 +76,18 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [discordMode, setDiscordMode] = useState<'oauth' | 'webhook'>('webhook');
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [savedWebhooks, setSavedWebhooks] = useState<DiscordWebhook[]>([]);
+  const [selectedWebhookId, setSelectedWebhookId] = useState<string>('');
+  const [showWebhookManager, setShowWebhookManager] = useState(false);
+  const [newWebhookName, setNewWebhookName] = useState('');
+  const [newWebhookUrl, setNewWebhookUrl] = useState('');
+  const [loadingWebhooks, setLoadingWebhooks] = useState(true);
 
   useEffect(() => {
     onConfigChange(localConfig);
   }, [localConfig, onConfigChange]);
 
-  // Check Discord connection status on mount
+  // Check Discord connection status and load webhooks on mount
   useEffect(() => {
     const checkDiscordStatus = async () => {
       try {
@@ -93,7 +106,79 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
       }
     };
     checkDiscordStatus();
+    loadSavedWebhooks();
   }, []);
+
+  const loadSavedWebhooks = async () => {
+    try {
+      setLoadingWebhooks(true);
+      const response = await fetch('/api/discord/webhooks');
+      const data = await response.json();
+      setSavedWebhooks(data || []);
+    } catch (error) {
+      console.error('Failed to load webhooks:', error);
+    } finally {
+      setLoadingWebhooks(false);
+    }
+  };
+
+  const handleAddWebhook = async () => {
+    if (!newWebhookName || !newWebhookUrl) {
+      toast({ title: "Error", description: "Name and URL are required", variant: "destructive" });
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/discord/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newWebhookName, webhookUrl: newWebhookUrl })
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to add webhook');
+      }
+      
+      const newWebhook = await response.json();
+      setSavedWebhooks([...savedWebhooks, newWebhook]);
+      setNewWebhookName('');
+      setNewWebhookUrl('');
+      toast({ title: "Webhook Added", description: `Added ${newWebhook.name}` });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleDeleteWebhook = async (id: string) => {
+    try {
+      const response = await fetch(`/api/discord/webhooks/${id}`, { method: 'DELETE' });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete webhook');
+      }
+      
+      setSavedWebhooks(savedWebhooks.filter(w => w.id !== id));
+      if (selectedWebhookId === id) {
+        setSelectedWebhookId('');
+        setWebhookUrl('');
+      }
+      toast({ title: "Webhook Deleted" });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleSelectWebhook = (webhookId: string) => {
+    setSelectedWebhookId(webhookId);
+    const webhook = savedWebhooks.find(w => w.id === webhookId);
+    if (webhook) {
+      setWebhookUrl(webhook.webhookUrl);
+      if (webhook.defaultMessage) {
+        setDiscordMessage(webhook.defaultMessage);
+      }
+    }
+  };
 
   // Load channels when guild changes
   useEffect(() => {
@@ -115,14 +200,26 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
     }
   };
 
+  const [channelError, setChannelError] = useState<string | null>(null);
+  
   const loadDiscordChannels = async (guildId: string) => {
     setLoadingChannels(true);
+    setChannelError(null);
     try {
       const response = await fetch(`/api/discord/channels/${guildId}`);
       const data = await response.json();
-      setDiscordChannels(data.channels || []);
-    } catch (error) {
+      if (!response.ok) {
+        setChannelError(data.message || 'Failed to load channels');
+        setDiscordChannels([]);
+      } else {
+        setDiscordChannels(data.channels || []);
+        if ((data.channels || []).length === 0) {
+          setChannelError('No text channels found or missing permissions');
+        }
+      }
+    } catch (error: any) {
       console.error('Failed to load Discord channels:', error);
+      setChannelError(error.message || 'Failed to load channels');
     } finally {
       setLoadingChannels(false);
     }
@@ -467,16 +564,66 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
               
               {discordMode === 'webhook' ? (
                 <div className="space-y-4">
+                  {/* Saved Webhooks Selector */}
+                  {savedWebhooks.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Saved Webhooks</Label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowWebhookManager(true)}
+                          data-testid="button-manage-webhooks"
+                        >
+                          <Settings className="h-4 w-4 mr-1" />
+                          Manage
+                        </Button>
+                      </div>
+                      <Select value={selectedWebhookId} onValueChange={handleSelectWebhook}>
+                        <SelectTrigger data-testid="select-saved-webhook">
+                          <SelectValue placeholder="Select a saved webhook" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {savedWebhooks.map(webhook => (
+                            <SelectItem key={webhook.id} value={webhook.id}>
+                              {webhook.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  
+                  {savedWebhooks.length === 0 && (
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">No saved webhooks</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowWebhookManager(true)}
+                        data-testid="button-add-first-webhook"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Webhook
+                      </Button>
+                    </div>
+                  )}
+                  
+                  <Separator />
+                  
                   <div className="space-y-2">
                     <Label>Webhook URL</Label>
                     <Input
                       placeholder="https://discord.com/api/webhooks/..."
                       value={webhookUrl}
-                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      onChange={(e) => {
+                        setWebhookUrl(e.target.value);
+                        setSelectedWebhookId(''); // Clear selection when typing custom
+                      }}
                       data-testid="input-webhook-url"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Create a webhook in your Discord channel settings and paste the URL here
+                      Select a saved webhook above, or paste a URL here
                     </p>
                   </div>
                   
@@ -504,6 +651,12 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
                     )}
                     Post {images.length} Images to Discord
                   </Button>
+                  
+                  {images.length > 10 && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      Will post in {Math.ceil(images.length / 10)} messages (Discord 10 image limit)
+                    </p>
+                  )}
                 </div>
               ) : discordLoading ? (
                 <div className="flex items-center justify-center p-4">
@@ -566,25 +719,38 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
                   {selectedGuildId && (
                     <div className="space-y-2">
                       <Label>Channel</Label>
-                      <Select 
-                        value={selectedChannelId} 
-                        onValueChange={setSelectedChannelId}
-                        disabled={loadingChannels}
-                      >
-                        <SelectTrigger data-testid="select-discord-channel">
-                          <SelectValue placeholder={loadingChannels ? "Loading..." : "Select a channel"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {discordChannels.map(channel => (
-                            <SelectItem key={channel.id} value={channel.id}>
-                              <span className="flex items-center gap-1">
-                                <Hash className="h-3 w-3" />
-                                {channel.name}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {loadingChannels ? (
+                        <div className="flex items-center gap-2 p-2 border rounded-md">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm text-muted-foreground">Loading channels...</span>
+                        </div>
+                      ) : channelError ? (
+                        <div className="p-3 border rounded-md bg-destructive/10">
+                          <p className="text-sm text-destructive">{channelError}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            OAuth may lack permissions. Use Webhook mode instead.
+                          </p>
+                        </div>
+                      ) : discordChannels.length > 0 ? (
+                        <Select 
+                          value={selectedChannelId} 
+                          onValueChange={setSelectedChannelId}
+                        >
+                          <SelectTrigger data-testid="select-discord-channel">
+                            <SelectValue placeholder="Select a channel" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {discordChannels.map(channel => (
+                              <SelectItem key={channel.id} value={channel.id}>
+                                <span className="flex items-center gap-1">
+                                  <Hash className="h-3 w-3" />
+                                  {channel.name}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : null}
                     </div>
                   )}
                   
@@ -729,6 +895,92 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
             </Button>
             <Button onClick={selectFolder} data-testid="button-select-folder">
               {selectedFolder ? `Select "${selectedFolder.name}"` : folderPath.length > 0 ? `Use "${folderPath[folderPath.length - 1].name}"` : "Use Root"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showWebhookManager} onOpenChange={setShowWebhookManager}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Manage Discord Webhooks</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Add new webhook form */}
+            <div className="space-y-3 p-3 border rounded-md">
+              <Label className="text-sm font-medium">Add New Webhook</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  placeholder="Channel name"
+                  value={newWebhookName}
+                  onChange={(e) => setNewWebhookName(e.target.value)}
+                  data-testid="input-new-webhook-name"
+                />
+                <Input
+                  placeholder="Webhook URL"
+                  value={newWebhookUrl}
+                  onChange={(e) => setNewWebhookUrl(e.target.value)}
+                  data-testid="input-new-webhook-url"
+                />
+              </div>
+              <Button 
+                size="sm" 
+                onClick={handleAddWebhook}
+                disabled={!newWebhookName || !newWebhookUrl}
+                data-testid="button-save-webhook"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Webhook
+              </Button>
+            </div>
+            
+            <Separator />
+            
+            {/* Saved webhooks list */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Saved Webhooks ({savedWebhooks.length})</Label>
+              {loadingWebhooks ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : savedWebhooks.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center p-4">
+                  No webhooks saved yet
+                </p>
+              ) : (
+                <ScrollArea className="h-[200px]">
+                  <div className="space-y-2">
+                    {savedWebhooks.map(webhook => (
+                      <div 
+                        key={webhook.id} 
+                        className="flex items-center justify-between p-2 border rounded-md"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm">{webhook.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {webhook.webhookUrl.substring(0, 50)}...
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteWebhook(webhook.id)}
+                          data-testid={`button-delete-webhook-${webhook.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowWebhookManager(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

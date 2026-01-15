@@ -1038,7 +1038,7 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
         if (!workflow) {
           return res.status(404).json({ message: 'Workflow not found' });
         }
-        images = workflow.processedImages || workflow.images || [];
+        images = (workflow as any).processedImages || workflow.images || [];
       } else if (imageIds) {
         for (const id of imageIds) {
           const img = await storage.findImageById(id);
@@ -1099,7 +1099,7 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
         if (!workflow) {
           return res.status(404).json({ message: 'Workflow not found' });
         }
-        images = workflow.processedImages || workflow.images || [];
+        images = (workflow as any).processedImages || workflow.images || [];
       } else if (imageIds) {
         for (const id of imageIds) {
           const img = await storage.findImageById(id);
@@ -1128,15 +1128,147 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
         return res.status(400).json({ message: 'No valid image files found' });
       }
       
-      const result = await discord.postToWebhook(webhookUrl, message || '', imageBuffers);
+      // Auto-batch: Discord limits 10 files per message
+      const BATCH_SIZE = 10;
+      let successCount = 0;
+      let failCount = 0;
+      const errors: string[] = [];
       
-      if (result.success) {
-        res.json({ success: true, count: imageBuffers.length });
+      for (let i = 0; i < imageBuffers.length; i += BATCH_SIZE) {
+        const batch = imageBuffers.slice(i, i + BATCH_SIZE);
+        // Only include message on the first batch
+        const batchMessage = i === 0 ? (message || '') : '';
+        
+        const result = await discord.postToWebhook(webhookUrl, batchMessage, batch);
+        
+        if (result.success) {
+          successCount += batch.length;
+        } else {
+          failCount += batch.length;
+          if (result.error) errors.push(result.error);
+        }
+        
+        // Small delay between batches to avoid rate limiting
+        if (i + BATCH_SIZE < imageBuffers.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      
+      const totalMessages = Math.ceil(imageBuffers.length / BATCH_SIZE);
+      
+      if (failCount === 0) {
+        res.json({ 
+          success: true, 
+          count: successCount, 
+          messages: totalMessages,
+          note: totalMessages > 1 ? `Posted in ${totalMessages} messages (Discord 10 image limit)` : undefined
+        });
+      } else if (successCount > 0) {
+        res.json({ 
+          success: true, 
+          count: successCount, 
+          failed: failCount,
+          messages: totalMessages,
+          note: `${successCount} images posted, ${failCount} failed`
+        });
       } else {
-        res.status(500).json({ success: false, message: result.error });
+        res.status(500).json({ success: false, message: errors[0] || 'Failed to post images' });
       }
     } catch (error: any) {
       console.error('Discord webhook error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Discord Webhook CRUD endpoints
+  app.get('/api/discord/webhooks', async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getUserSettings();
+      res.json(settings.discordWebhooks || []);
+    } catch (error: any) {
+      console.error('Get webhooks error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/discord/webhooks', async (req: Request, res: Response) => {
+    try {
+      const { name, webhookUrl, defaultMessage } = req.body;
+      
+      if (!name || !webhookUrl) {
+        return res.status(400).json({ message: 'Name and webhook URL are required' });
+      }
+      
+      if (!webhookUrl.includes('discord.com/api/webhooks/')) {
+        return res.status(400).json({ message: 'Invalid Discord webhook URL' });
+      }
+      
+      const settings = await storage.getUserSettings();
+      const webhooks = settings.discordWebhooks || [];
+      
+      const newWebhook = {
+        id: randomUUID(),
+        name,
+        webhookUrl,
+        defaultMessage: defaultMessage || undefined
+      };
+      
+      webhooks.push(newWebhook);
+      await storage.saveUserSettings({ ...settings, discordWebhooks: webhooks });
+      
+      res.json(newWebhook);
+    } catch (error: any) {
+      console.error('Create webhook error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put('/api/discord/webhooks/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { name, webhookUrl, defaultMessage } = req.body;
+      
+      const settings = await storage.getUserSettings();
+      const webhooks = settings.discordWebhooks || [];
+      
+      const index = webhooks.findIndex(w => w.id === id);
+      if (index === -1) {
+        return res.status(404).json({ message: 'Webhook not found' });
+      }
+      
+      webhooks[index] = {
+        ...webhooks[index],
+        name: name || webhooks[index].name,
+        webhookUrl: webhookUrl || webhooks[index].webhookUrl,
+        defaultMessage: defaultMessage !== undefined ? defaultMessage : webhooks[index].defaultMessage
+      };
+      
+      await storage.saveUserSettings({ ...settings, discordWebhooks: webhooks });
+      res.json(webhooks[index]);
+    } catch (error: any) {
+      console.error('Update webhook error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/discord/webhooks/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      const settings = await storage.getUserSettings();
+      const webhooks = settings.discordWebhooks || [];
+      
+      const index = webhooks.findIndex(w => w.id === id);
+      if (index === -1) {
+        return res.status(404).json({ message: 'Webhook not found' });
+      }
+      
+      webhooks.splice(index, 1);
+      await storage.saveUserSettings({ ...settings, discordWebhooks: webhooks });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Delete webhook error:', error);
       res.status(500).json({ message: error.message });
     }
   });
