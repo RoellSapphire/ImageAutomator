@@ -150,16 +150,20 @@ export function UploadStep({
     if (targetCount) setLoadingTarget(targetCount);
     
     try {
-      // Fetch images up to target count using pagination
+      // For "Oldest" mode, we need to fetch ALL available images first, then take the oldest N
+      // For "Newest" mode, we just fetch the target count
       const allFetchedImages: CivitaiImageData[] = [];
       let cursor: string | undefined = undefined;
-      const maxFetch = Math.max(targetCount || 40, 400); // Allow up to 400 images
+      
+      // For Oldest: fetch up to 2000 images to find the true oldest
+      // For Newest: just fetch what we need
+      const maxFetch = currentSort === 'Oldest' ? 2000 : Math.max(targetCount || 40, 400);
       
       // Always fetch fresh from the beginning
       while (allFetchedImages.length < maxFetch) {
         const fetchUrl: string = cursor 
-          ? `/api/civitai/images?cursor=${cursor}&limit=40&sort=${currentSort}`
-          : `/api/civitai/images?limit=40&sort=${currentSort}`;
+          ? `/api/civitai/images?cursor=${cursor}&limit=40&sort=Newest`
+          : `/api/civitai/images?limit=40&sort=Newest`;
         
         const fetchResponse: Response = await fetch(fetchUrl);
         if (!fetchResponse.ok) {
@@ -175,8 +179,11 @@ export function UploadStep({
         allFetchedImages.push(...newImages);
         cursor = responseData.metadata.nextCursor;
         
-        // If no more pages or we have enough, break
-        if (!cursor || allFetchedImages.length >= maxFetch) break;
+        // If no more pages, break
+        if (!cursor) break;
+        
+        // For Newest, stop when we have enough
+        if (currentSort === 'Newest' && allFetchedImages.length >= (targetCount || 40)) break;
       }
       
       // Sort by createdAt based on sort order
