@@ -56,6 +56,8 @@ const DEFAULT_AUTO_MODE: AutoModeSettings = {
   skipExport: false,
   skipPublish: false,
   skipDeviantArt: false,
+  skipDiscord: true,
+  discordWebhookId: undefined,
 };
 
 const DEFAULT_TEMPLATES: DescriptionTemplate[] = [
@@ -304,6 +306,48 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           description: "Skipped per auto mode settings",
         });
       }
+      
+      // Discord posting
+      if (!autoModeSettings.skipDiscord && autoModeSettings.discordWebhookId) {
+        try {
+          // Fetch webhook URL from saved webhooks
+          const webhooksResponse = await fetch('/api/discord/webhooks');
+          const webhooks = await webhooksResponse.json();
+          const webhook = webhooks.find((w: any) => w.id === autoModeSettings.discordWebhookId);
+          
+          if (webhook) {
+            const discordResponse = await fetch('/api/discord/webhook', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                webhookUrl: webhook.webhookUrl,
+                workflowId: wfId,
+              }),
+            });
+            
+            const discordData = await discordResponse.json();
+            if (discordResponse.ok) {
+              toast({
+                title: "Discord Posted",
+                description: discordData.note || `Posted ${discordData.count} images`,
+              });
+            } else {
+              toast({
+                title: "Discord Warning",
+                description: discordData.message || "Discord post failed",
+                variant: "destructive",
+              });
+            }
+          }
+        } catch (error) {
+          toast({
+            title: "Discord Error",
+            description: "Failed to post to Discord",
+            variant: "destructive",
+          });
+        }
+      }
+      
       onStepComplete(4);
       
       onStepChange(5);

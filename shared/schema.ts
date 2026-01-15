@@ -163,6 +163,8 @@ export const autoModeSettingsSchema = z.object({
   skipExport: z.boolean().default(false),
   skipPublish: z.boolean().default(false),
   skipDeviantArt: z.boolean().default(false),
+  skipDiscord: z.boolean().default(true), // Discord disabled by default
+  discordWebhookId: z.string().optional(), // Selected webhook preset ID
 });
 
 export type AutoModeSettings = z.infer<typeof autoModeSettingsSchema>;

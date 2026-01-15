@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles, ArrowUpDown, X } from "lucide-react";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles, ArrowUpDown, X, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DriveFolder {
@@ -104,6 +104,27 @@ export function UploadStep({
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<DriveFolder | null>(null);
+  
+  // Discord webhooks state
+  const [discordWebhooks, setDiscordWebhooks] = useState<{ id: string; name: string; webhookUrl: string }[]>([]);
+  
+  // Load discord webhooks on mount
+  const loadDiscordWebhooks = useCallback(async () => {
+    try {
+      const response = await fetch('/api/discord/webhooks');
+      if (response.ok) {
+        const webhooks = await response.json();
+        setDiscordWebhooks(webhooks);
+      }
+    } catch (error) {
+      console.error('Failed to load discord webhooks:', error);
+    }
+  }, []);
+  
+  // Load webhooks on component mount
+  useEffect(() => {
+    loadDiscordWebhooks();
+  }, [loadDiscordWebhooks]);
 
   const loadFolders = async (parentId?: string) => {
     setLoadingFolders(true);
@@ -512,88 +533,74 @@ export function UploadStep({
         </CardHeader>
         {autoModeSettings.enabled && (
           <CardContent className="space-y-4 pt-0">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    id="auto-title"
-                    checked={autoModeSettings.autoTitle}
-                    onCheckedChange={(autoTitle) => onAutoModeChange({ ...autoModeSettings, autoTitle })}
-                    data-testid="switch-auto-title"
-                  />
-                  <Label htmlFor="auto-title" className="text-sm">
-                    Auto-generate title (date + "Update")
-                  </Label>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description-template" className="text-sm">Description Template</Label>
-                <Select
-                  value={autoModeSettings.selectedTemplateId || "none"}
-                  onValueChange={(value) => onAutoModeChange({ 
-                    ...autoModeSettings, 
-                    selectedTemplateId: value === "none" ? undefined : value 
-                  })}
-                >
-                  <SelectTrigger id="description-template" data-testid="select-description-template">
-                    <SelectValue placeholder="Select a template" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No description</SelectItem>
-                    {descriptionTemplates.map((template) => (
-                      <SelectItem key={template.id} value={template.id}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="auto-title" className="text-sm flex-1">
+                  Auto-generate title (date + "Update")
+                </Label>
+                <Switch
+                  id="auto-title"
+                  checked={autoModeSettings.autoTitle}
+                  onCheckedChange={(autoTitle) => onAutoModeChange({ ...autoModeSettings, autoTitle })}
+                  data-testid="switch-auto-title"
+                />
               </div>
             </div>
-            <div className="flex flex-wrap gap-4">
+            
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
               <div className="flex items-center gap-2">
+                <Label htmlFor="enable-rename" className="text-sm">Rename</Label>
                 <Switch
-                  id="skip-rename"
-                  checked={autoModeSettings.skipRename}
-                  onCheckedChange={(skipRename) => onAutoModeChange({ ...autoModeSettings, skipRename })}
-                  data-testid="switch-skip-rename"
+                  id="enable-rename"
+                  checked={!autoModeSettings.skipRename}
+                  onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, skipRename: !enabled })}
+                  data-testid="switch-enable-rename"
                 />
-                <Label htmlFor="skip-rename" className="text-sm">Skip Rename</Label>
               </div>
               <div className="flex items-center gap-2">
+                <Label htmlFor="enable-enhance" className="text-sm">Enhance</Label>
                 <Switch
-                  id="skip-enhance"
-                  checked={autoModeSettings.skipEnhance}
-                  onCheckedChange={(skipEnhance) => onAutoModeChange({ ...autoModeSettings, skipEnhance })}
-                  data-testid="switch-skip-enhance"
+                  id="enable-enhance"
+                  checked={!autoModeSettings.skipEnhance}
+                  onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, skipEnhance: !enabled })}
+                  data-testid="switch-enable-enhance"
                 />
-                <Label htmlFor="skip-enhance" className="text-sm">Skip Enhance</Label>
               </div>
               <div className="flex items-center gap-2">
+                <Label htmlFor="enable-export" className="text-sm">Google Drive</Label>
                 <Switch
-                  id="skip-export"
-                  checked={autoModeSettings.skipExport}
-                  onCheckedChange={(skipExport) => onAutoModeChange({ ...autoModeSettings, skipExport })}
-                  data-testid="switch-skip-export"
+                  id="enable-export"
+                  checked={!autoModeSettings.skipExport}
+                  onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, skipExport: !enabled })}
+                  data-testid="switch-enable-export"
                 />
-                <Label htmlFor="skip-export" className="text-sm">Skip Google Drive export</Label>
               </div>
               <div className="flex items-center gap-2">
+                <Label htmlFor="enable-publish" className="text-sm">WordPress</Label>
                 <Switch
-                  id="skip-publish"
-                  checked={autoModeSettings.skipPublish}
-                  onCheckedChange={(skipPublish) => onAutoModeChange({ ...autoModeSettings, skipPublish })}
-                  data-testid="switch-skip-publish"
+                  id="enable-publish"
+                  checked={!autoModeSettings.skipPublish}
+                  onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, skipPublish: !enabled })}
+                  data-testid="switch-enable-publish"
                 />
-                <Label htmlFor="skip-publish" className="text-sm">Skip WordPress publish</Label>
               </div>
               <div className="flex items-center gap-2">
+                <Label htmlFor="enable-deviantart" className="text-sm">DeviantArt</Label>
                 <Switch
-                  id="skip-deviantart"
-                  checked={autoModeSettings.skipDeviantArt}
-                  onCheckedChange={(skipDeviantArt) => onAutoModeChange({ ...autoModeSettings, skipDeviantArt })}
-                  data-testid="switch-skip-deviantart"
+                  id="enable-deviantart"
+                  checked={!autoModeSettings.skipDeviantArt}
+                  onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, skipDeviantArt: !enabled })}
+                  data-testid="switch-enable-deviantart"
                 />
-                <Label htmlFor="skip-deviantart" className="text-sm">Skip DeviantArt upload</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="enable-discord" className="text-sm">Discord</Label>
+                <Switch
+                  id="enable-discord"
+                  checked={!autoModeSettings.skipDiscord}
+                  onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, skipDiscord: !enabled })}
+                  data-testid="switch-enable-discord"
+                />
               </div>
             </div>
             {isAutoRunning && (
@@ -646,311 +653,388 @@ export function UploadStep({
             
             <div className={cn("mt-4", isAutoRunning && "hidden")}>
               <Accordion type="single" collapsible>
-                <AccordionItem value="rename" className="border rounded-lg px-3">
-                  <AccordionTrigger className="py-3 hover:no-underline">
-                    <div className="flex items-center gap-2">
-                      <FileEdit className="h-4 w-4" />
-                      <span className="text-sm font-medium">Rename Settings</span>
-                      {renameConfig && (
-                        <Badge variant="secondary" className="ml-2 text-xs">
-                          {renameConfig.prefix}_{"{n}"}
-                        </Badge>
-                      )}
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    {renameConfig && onRenameConfigChange && (
-                      <div className="space-y-3 py-2">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Prefix</Label>
-                            <Input
-                              value={renameConfig.prefix}
-                              onChange={(e) => onRenameConfigChange({ ...renameConfig, prefix: e.target.value })}
-                              placeholder="civitai"
-                              className="h-8 text-sm"
-                              data-testid="input-auto-prefix"
-                            />
+                {!autoModeSettings.skipRename && (
+                  <AccordionItem value="rename" className="border rounded-lg px-3">
+                    <AccordionTrigger className="py-3 hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <FileEdit className="h-4 w-4" />
+                        <span className="text-sm font-medium">Rename Settings</span>
+                        {renameConfig && (
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            {renameConfig.prefix}_{"{n}"}
+                          </Badge>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      {renameConfig && onRenameConfigChange && (
+                        <div className="space-y-3 py-2">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Prefix</Label>
+                              <Input
+                                value={renameConfig.prefix}
+                                onChange={(e) => onRenameConfigChange({ ...renameConfig, prefix: e.target.value })}
+                                placeholder="civitai"
+                                className="h-8 text-sm"
+                                data-testid="input-auto-prefix"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Separator</Label>
+                              <div className="flex gap-1">
+                                {["_", "-", "."].map((sep) => (
+                                  <Button
+                                    key={sep}
+                                    size="sm"
+                                    variant={renameConfig.separator === sep ? "default" : "outline"}
+                                    onClick={() => onRenameConfigChange({ ...renameConfig, separator: sep })}
+                                    className="h-8 px-3"
+                                    data-testid={`button-auto-sep-${sep}`}
+                                  >
+                                    {sep}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Separator</Label>
-                            <div className="flex gap-1">
-                              {["_", "-", "."].map((sep) => (
-                                <Button
-                                  key={sep}
-                                  size="sm"
-                                  variant={renameConfig.separator === sep ? "default" : "outline"}
-                                  onClick={() => onRenameConfigChange({ ...renameConfig, separator: sep })}
-                                  className="h-8 px-3"
-                                  data-testid={`button-auto-sep-${sep}`}
-                                >
-                                  {sep}
-                                </Button>
-                              ))}
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Start Number</Label>
+                              <Input
+                                type="number"
+                                value={renameConfig.startNumber}
+                                onChange={(e) => onRenameConfigChange({ ...renameConfig, startNumber: parseInt(e.target.value) || 1 })}
+                                className="h-8 text-sm"
+                                data-testid="input-auto-start"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Padding ({renameConfig.padding} digits)</Label>
+                              <Slider
+                                value={[renameConfig.padding]}
+                                onValueChange={([v]) => onRenameConfigChange({ ...renameConfig, padding: v })}
+                                min={1}
+                                max={5}
+                                step={1}
+                                data-testid="slider-auto-padding"
+                              />
                             </div>
                           </div>
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Start Number</Label>
-                            <Input
-                              type="number"
-                              value={renameConfig.startNumber}
-                              onChange={(e) => onRenameConfigChange({ ...renameConfig, startNumber: parseInt(e.target.value) || 1 })}
-                              className="h-8 text-sm"
-                              data-testid="input-auto-start"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Padding ({renameConfig.padding} digits)</Label>
-                            <Slider
-                              value={[renameConfig.padding]}
-                              onValueChange={([v]) => onRenameConfigChange({ ...renameConfig, padding: v })}
-                              min={1}
-                              max={5}
-                              step={1}
-                              data-testid="slider-auto-padding"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="enhance" className="border rounded-lg px-3 mt-2">
-                  <AccordionTrigger className="py-3 hover:no-underline">
-                    <div className="flex items-center gap-2">
-                      <ImageIcon className="h-4 w-4" />
-                      <span className="text-sm font-medium">Enhance Settings</span>
-                      {enhanceConfig && (
-                        <Badge variant="secondary" className="ml-2 text-xs">
-                          {enhanceConfig.resize ? `${enhanceConfig.scaleFactor}%` : "No resize"}
-                        </Badge>
                       )}
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    {enhanceConfig && onEnhanceConfigChange && (
-                      <div className="space-y-3 py-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-sm">Resize Images</Label>
-                          <Switch
-                            checked={enhanceConfig.resize}
-                            onCheckedChange={(resize) => onEnhanceConfigChange({ ...enhanceConfig, resize })}
-                            data-testid="switch-auto-resize"
-                          />
-                        </div>
-                        {enhanceConfig.resize && (
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-xs">
-                              <span>Scale Factor</span>
-                              <span className="font-medium">{enhanceConfig.scaleFactor}%</span>
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
+                {!autoModeSettings.skipEnhance && (
+                  <AccordionItem value="enhance" className={cn("border rounded-lg px-3", !autoModeSettings.skipRename && "mt-2")}>
+                    <AccordionTrigger className="py-3 hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <ImageIcon className="h-4 w-4" />
+                        <span className="text-sm font-medium">Enhance Settings</span>
+                        {enhanceConfig && (
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            {enhanceConfig.resize ? `${enhanceConfig.scaleFactor}%` : "No resize"}
+                          </Badge>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      {enhanceConfig && onEnhanceConfigChange && (
+                        <div className="space-y-3 py-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm">Resize Images</Label>
+                            <Switch
+                              checked={enhanceConfig.resize}
+                              onCheckedChange={(resize) => onEnhanceConfigChange({ ...enhanceConfig, resize })}
+                              data-testid="switch-auto-resize"
+                            />
+                          </div>
+                          {enhanceConfig.resize && (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-xs">
+                                <span>Scale Factor</span>
+                                <span className="font-medium">{enhanceConfig.scaleFactor}%</span>
+                              </div>
+                              <Slider
+                                value={[enhanceConfig.scaleFactor]}
+                                onValueChange={([v]) => onEnhanceConfigChange({ ...enhanceConfig, scaleFactor: v })}
+                                min={10}
+                                max={300}
+                                step={10}
+                                data-testid="slider-auto-scale"
+                              />
                             </div>
-                            <Slider
-                              value={[enhanceConfig.scaleFactor]}
-                              onValueChange={([v]) => onEnhanceConfigChange({ ...enhanceConfig, scaleFactor: v })}
-                              min={10}
-                              max={300}
-                              step={10}
-                              data-testid="slider-auto-scale"
-                            />
-                          </div>
-                        )}
-                        <div className="flex items-center justify-between">
-                          <Label className="text-sm">Remove EXIF Data</Label>
-                          <Switch
-                            checked={enhanceConfig.removeExif}
-                            onCheckedChange={(removeExif) => onEnhanceConfigChange({ ...enhanceConfig, removeExif })}
-                            data-testid="switch-auto-exif"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Output Format</Label>
-                          <Select
-                            value={enhanceConfig.outputFormat}
-                            onValueChange={(outputFormat: any) => onEnhanceConfigChange({ ...enhanceConfig, outputFormat })}
-                          >
-                            <SelectTrigger className="h-8 text-sm" data-testid="select-auto-format">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="original">Keep Original</SelectItem>
-                              <SelectItem value="jpeg">JPEG</SelectItem>
-                              <SelectItem value="png">PNG</SelectItem>
-                              <SelectItem value="webp">WebP</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="export" className="border rounded-lg px-3 mt-2">
-                  <AccordionTrigger className="py-3 hover:no-underline">
-                    <div className="flex items-center gap-2">
-                      <FolderOpen className="h-4 w-4" />
-                      <span className="text-sm font-medium">Export Settings</span>
-                      {driveConfig && (
-                        <Badge variant="secondary" className="ml-2 text-xs">
-                          {driveConfig.folderPath || "/"}
-                        </Badge>
-                      )}
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    {driveConfig && onDriveConfigChange && (
-                      <div className="space-y-3 py-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Google Drive Folder</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              value={driveConfig.folderPath}
-                              onChange={(e) => onDriveConfigChange({ ...driveConfig, folderPath: e.target.value, folderId: undefined })}
-                              placeholder="/Civitai Images"
-                              className="h-8 text-sm flex-1"
-                              data-testid="input-auto-folder"
-                            />
-                            <Button 
-                              variant="outline" 
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={openFolderBrowser}
-                              data-testid="button-browse-folder-auto"
-                            >
-                              <FolderOpen className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <Label className="text-sm">Create Subfolder</Label>
-                          <Switch
-                            checked={driveConfig.createSubfolder}
-                            onCheckedChange={(createSubfolder) => onDriveConfigChange({ ...driveConfig, createSubfolder })}
-                            data-testid="switch-auto-subfolder"
-                          />
-                        </div>
-                        {driveConfig.createSubfolder && (
-                          <div className="space-y-1">
-                            <Label className="text-xs">Subfolder Name</Label>
-                            <Input
-                              value={driveConfig.subfolderName}
-                              onChange={(e) => onDriveConfigChange({ ...driveConfig, subfolderName: e.target.value })}
-                              placeholder="batch-001"
-                              className="h-8 text-sm"
-                              data-testid="input-auto-subfolder-name"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="publish" className="border rounded-lg px-3 mt-2">
-                  <AccordionTrigger className="py-3 hover:no-underline">
-                    <div className="flex items-center gap-2">
-                      <Globe className="h-4 w-4" />
-                      <span className="text-sm font-medium">Publish Settings</span>
-                      {wordpressConfig?.siteUrl && (
-                        <Badge variant="secondary" className="ml-2 text-xs">
-                          {new URL(wordpressConfig.siteUrl).hostname}
-                        </Badge>
-                      )}
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    {wordpressConfig && onWordpressConfigChange && (
-                      <div className="space-y-3 py-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs">WordPress Site URL</Label>
-                          <Input
-                            value={wordpressConfig.siteUrl}
-                            onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, siteUrl: e.target.value })}
-                            placeholder="https://yoursite.com"
-                            className="h-8 text-sm"
-                            data-testid="input-auto-site-url"
-                          />
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Username</Label>
-                            <Input
-                              value={wordpressConfig.username}
-                              onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, username: e.target.value })}
-                              placeholder="admin"
-                              className="h-8 text-sm"
-                              data-testid="input-auto-username"
+                          )}
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm">Remove EXIF Data</Label>
+                            <Switch
+                              checked={enhanceConfig.removeExif}
+                              onCheckedChange={(removeExif) => onEnhanceConfigChange({ ...enhanceConfig, removeExif })}
+                              data-testid="switch-auto-exif"
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">App Password</Label>
-                            <Input
-                              type="password"
-                              value={wordpressConfig.applicationPassword}
-                              onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, applicationPassword: e.target.value })}
-                              placeholder="xxxx xxxx xxxx"
-                              className="h-8 text-sm font-mono"
-                              data-testid="input-auto-app-password"
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">ARMember API Key</Label>
-                          <Input
-                            type="password"
-                            value={wordpressConfig.armemberApiKey || ""}
-                            onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, armemberApiKey: e.target.value })}
-                            placeholder="vw8VKY6vu..."
-                            className="h-8 text-sm font-mono"
-                            data-testid="input-auto-armember-key"
-                          />
-                        </div>
-                        {armemberPlans.length > 0 && (
-                          <div className="space-y-1">
-                            <Label className="text-xs">Membership Plan</Label>
+                            <Label className="text-xs">Output Format</Label>
                             <Select
-                              value={wordpressConfig.armemberPlanId || "public"}
-                              onValueChange={(value) => onWordpressConfigChange({ 
-                                ...wordpressConfig, 
-                                armemberPlanId: value === "public" ? undefined : value 
-                              })}
+                              value={enhanceConfig.outputFormat}
+                              onValueChange={(outputFormat: any) => onEnhanceConfigChange({ ...enhanceConfig, outputFormat })}
                             >
-                              <SelectTrigger className="h-8 text-sm" data-testid="select-auto-plan">
-                                <SelectValue placeholder="Select plan" />
+                              <SelectTrigger className="h-8 text-sm" data-testid="select-auto-format">
+                                <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="public">Public (No Restriction)</SelectItem>
-                                {armemberPlans.map((plan) => (
-                                  <SelectItem key={plan.id} value={plan.id}>
-                                    {plan.name}
+                                <SelectItem value="original">Keep Original</SelectItem>
+                                <SelectItem value="jpeg">JPEG</SelectItem>
+                                <SelectItem value="png">PNG</SelectItem>
+                                <SelectItem value="webp">WebP</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
+                {!autoModeSettings.skipExport && (
+                  <AccordionItem value="export" className="border rounded-lg px-3 mt-2">
+                    <AccordionTrigger className="py-3 hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="h-4 w-4" />
+                        <span className="text-sm font-medium">Export Settings</span>
+                        {driveConfig && (
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            {driveConfig.folderPath || "/"}
+                          </Badge>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      {driveConfig && onDriveConfigChange && (
+                        <div className="space-y-3 py-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Google Drive Folder</Label>
+                            <div className="flex gap-2">
+                              <Input
+                                value={driveConfig.folderPath}
+                                onChange={(e) => onDriveConfigChange({ ...driveConfig, folderPath: e.target.value, folderId: undefined })}
+                                placeholder="/Civitai Images"
+                                className="h-8 text-sm flex-1"
+                                data-testid="input-auto-folder"
+                              />
+                              <Button 
+                                variant="outline" 
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={openFolderBrowser}
+                                data-testid="button-browse-folder-auto"
+                              >
+                                <FolderOpen className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm">Create Subfolder</Label>
+                            <Switch
+                              checked={driveConfig.createSubfolder}
+                              onCheckedChange={(createSubfolder) => onDriveConfigChange({ ...driveConfig, createSubfolder })}
+                              data-testid="switch-auto-subfolder"
+                            />
+                          </div>
+                          {driveConfig.createSubfolder && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Subfolder Name</Label>
+                              <Input
+                                value={driveConfig.subfolderName}
+                                onChange={(e) => onDriveConfigChange({ ...driveConfig, subfolderName: e.target.value })}
+                                placeholder="batch-001"
+                                className="h-8 text-sm"
+                                data-testid="input-auto-subfolder-name"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
+                {!autoModeSettings.skipPublish && (
+                  <AccordionItem value="publish" className="border rounded-lg px-3 mt-2">
+                    <AccordionTrigger className="py-3 hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <Globe className="h-4 w-4" />
+                        <span className="text-sm font-medium">Publish Settings</span>
+                        {wordpressConfig?.siteUrl && (
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            {new URL(wordpressConfig.siteUrl).hostname}
+                          </Badge>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      {wordpressConfig && onWordpressConfigChange && (
+                        <div className="space-y-3 py-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Description Template</Label>
+                            <Select
+                              value={autoModeSettings.selectedTemplateId || "none"}
+                              onValueChange={(value) => onAutoModeChange({ 
+                                ...autoModeSettings, 
+                                selectedTemplateId: value === "none" ? undefined : value 
+                              })}
+                            >
+                              <SelectTrigger className="h-8 text-sm" data-testid="select-description-template">
+                                <SelectValue placeholder="Select a template" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No description</SelectItem>
+                                {descriptionTemplates.map((template) => (
+                                  <SelectItem key={template.id} value={template.id}>
+                                    {template.name}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
                           </div>
-                        )}
-                        <div className="space-y-1">
-                          <Label className="text-xs">Post Status</Label>
-                          <Select
-                            value={wordpressConfig.postStatus}
-                            onValueChange={(postStatus: any) => onWordpressConfigChange({ ...wordpressConfig, postStatus })}
-                          >
-                            <SelectTrigger className="h-8 text-sm" data-testid="select-auto-status">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="draft">Save as Draft</SelectItem>
-                              <SelectItem value="pending">Pending Review</SelectItem>
-                              <SelectItem value="publish">Publish Immediately</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="space-y-1">
+                            <Label className="text-xs">WordPress Site URL</Label>
+                            <Input
+                              value={wordpressConfig.siteUrl}
+                              onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, siteUrl: e.target.value })}
+                              placeholder="https://yoursite.com"
+                              className="h-8 text-sm"
+                              data-testid="input-auto-site-url"
+                            />
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Username</Label>
+                              <Input
+                                value={wordpressConfig.username}
+                                onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, username: e.target.value })}
+                                placeholder="admin"
+                                className="h-8 text-sm"
+                                data-testid="input-auto-username"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">App Password</Label>
+                              <Input
+                                type="password"
+                                value={wordpressConfig.applicationPassword}
+                                onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, applicationPassword: e.target.value })}
+                                placeholder="xxxx xxxx xxxx"
+                                className="h-8 text-sm font-mono"
+                                data-testid="input-auto-app-password"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">ARMember API Key</Label>
+                            <Input
+                              type="password"
+                              value={wordpressConfig.armemberApiKey || ""}
+                              onChange={(e) => onWordpressConfigChange({ ...wordpressConfig, armemberApiKey: e.target.value })}
+                              placeholder="vw8VKY6vu..."
+                              className="h-8 text-sm font-mono"
+                              data-testid="input-auto-armember-key"
+                            />
+                          </div>
+                          {armemberPlans.length > 0 && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Membership Plan</Label>
+                              <Select
+                                value={wordpressConfig.armemberPlanId || "public"}
+                                onValueChange={(value) => onWordpressConfigChange({ 
+                                  ...wordpressConfig, 
+                                  armemberPlanId: value === "public" ? undefined : value 
+                                })}
+                              >
+                                <SelectTrigger className="h-8 text-sm" data-testid="select-auto-plan">
+                                  <SelectValue placeholder="Select plan" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="public">Public (No Restriction)</SelectItem>
+                                  {armemberPlans.map((plan) => (
+                                    <SelectItem key={plan.id} value={plan.id}>
+                                      {plan.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+                          <div className="space-y-1">
+                            <Label className="text-xs">Post Status</Label>
+                            <Select
+                              value={wordpressConfig.postStatus}
+                              onValueChange={(postStatus: any) => onWordpressConfigChange({ ...wordpressConfig, postStatus })}
+                            >
+                              <SelectTrigger className="h-8 text-sm" data-testid="select-auto-status">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="draft">Save as Draft</SelectItem>
+                                <SelectItem value="pending">Pending Review</SelectItem>
+                                <SelectItem value="publish">Publish Immediately</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
+                {!autoModeSettings.skipDiscord && (
+                  <AccordionItem value="discord" className="border rounded-lg px-3 mt-2">
+                    <AccordionTrigger className="py-3 hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <MessageCircle className="h-4 w-4" />
+                        <span className="text-sm font-medium">Discord Settings</span>
+                        {autoModeSettings.discordWebhookId && discordWebhooks.find(w => w.id === autoModeSettings.discordWebhookId) && (
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            {discordWebhooks.find(w => w.id === autoModeSettings.discordWebhookId)?.name}
+                          </Badge>
+                        )}
                       </div>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="space-y-3 py-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Webhook Channel</Label>
+                          <Select
+                            value={autoModeSettings.discordWebhookId || "none"}
+                          onValueChange={(value) => onAutoModeChange({ 
+                            ...autoModeSettings, 
+                            discordWebhookId: value === "none" ? undefined : value 
+                          })}
+                        >
+                          <SelectTrigger className="h-8 text-sm" data-testid="select-discord-webhook-auto">
+                            <SelectValue placeholder="Select a webhook" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No webhook selected</SelectItem>
+                            {discordWebhooks.map((webhook) => (
+                              <SelectItem key={webhook.id} value={webhook.id}>
+                                {webhook.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {discordWebhooks.length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          No webhooks saved. Add webhooks in the Export step's Discord section.
+                        </p>
+                      )}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
               </Accordion>
             </div>
           </CardContent>
