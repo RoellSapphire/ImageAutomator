@@ -33,14 +33,14 @@
     "armemberApiKey": "vw8VKY6vuMawvaFlw8T6VEbO2E9adm"
   },
   "autoModeSettings": {
-    "enabled": false,
-    "autoTitle": false,
-    "selectedTemplateId": "4",
-    "skipRename": false,
+    "enabled": true,
+    "autoTitle": true,
+    "selectedTemplateId": "5",
+    "skipRename": true,
     "skipEnhance": true,
     "skipExport": false,
-    "skipPublish": true,
-    "skipDeviantArt": true
+    "skipPublish": false,
+    "skipDeviantArt": false
   },
   "descriptionTemplates": [
     {
