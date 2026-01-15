@@ -834,11 +834,13 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
       if (wordpressConfig.armemberPlanId) {
         try {
-          // ARMember uses post meta 'arm_access_plan_ids' as an array of plan IDs
-          // And 'arm_restrict_post' to enable restriction
+          // ARMember uses post meta 'arm_access_plan' as an array of plan IDs
+          // And 'arm_item_protection' set to 1 to enable restriction
           const planIds = wordpressConfig.armemberPlanId.split(',').map((id: string) => id.trim());
           
-          // First try: Update post meta directly
+          console.log('Applying ARMember restriction for post', post.id, 'with plans:', planIds);
+          
+          // First try: Update post meta directly using correct ARMember meta keys
           const metaResponse = await fetch(`${wordpressConfig.siteUrl}/wp-json/wp/v2/posts/${post.id}`, {
             method: 'POST',
             headers: {
@@ -847,14 +849,17 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
             },
             body: JSON.stringify({
               meta: {
-                'arm_access_plan_ids': planIds,
-                'arm_restrict_post': '1',
+                'arm_access_plan': planIds,
+                'arm_item_protection': 1,
               },
             }),
           });
           
+          const metaResponseText = await metaResponse.text();
+          console.log('ARMember meta update response:', metaResponse.status, metaResponseText.substring(0, 200));
+          
           if (!metaResponse.ok) {
-            console.log('ARMember meta update via post failed, status:', metaResponse.status);
+            console.log('ARMember meta update via post failed, trying alternative...');
             
             // Try alternative: Use the ARMember API endpoint if available
             const armemberApiKey = wordpressConfig.armemberApiKey;
@@ -871,7 +876,8 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
                   plan_ids: planIds,
                 }),
               });
-              console.log('ARMember API restrict response:', armResponse.status);
+              const armText = await armResponse.text();
+              console.log('ARMember API restrict response:', armResponse.status, armText.substring(0, 200));
             }
           } else {
             console.log('ARMember restriction applied via post meta for plans:', planIds);

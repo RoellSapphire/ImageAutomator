@@ -104,28 +104,54 @@ export async function submitToStash(
   title: string,
   description: string
 ): Promise<StashSubmitResponse> {
+  console.log('[DeviantArt] Submitting to stash:', { filename, title, bufferSize: imageBuffer.length });
+  
   const form = new FormData();
   form.append('title', title);
   form.append('artist_comments', description);
   form.append('access_token', accessToken);
+  
+  // Determine content type from filename
+  const ext = filename.toLowerCase().split('.').pop();
+  let contentType = 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
+  else if (ext === 'gif') contentType = 'image/gif';
+  else if (ext === 'webp') contentType = 'image/webp';
+  
   form.append('file', imageBuffer, {
     filename: filename,
-    contentType: 'image/png',
+    contentType: contentType,
   });
 
-  const response = await fetch(`${DEVIANTART_API_BASE}/stash/submit`, {
-    method: 'POST',
-    body: form as any,
-    headers: form.getHeaders(),
-  });
+  try {
+    const response = await fetch(`${DEVIANTART_API_BASE}/stash/submit`, {
+      method: 'POST',
+      body: form as any,
+      headers: form.getHeaders(),
+    });
 
-  const result = await response.json();
-  
-  if (result.error) {
-    throw new Error(`Stash submit failed: ${result.error_description || result.error}`);
+    const responseText = await response.text();
+    console.log('[DeviantArt] Stash submit response status:', response.status);
+    console.log('[DeviantArt] Stash submit response:', responseText.substring(0, 500));
+    
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      throw new Error(`Stash submit failed: Invalid response - ${responseText.substring(0, 200)}`);
+    }
+    
+    if (result.error) {
+      console.error('[DeviantArt] Stash submit error:', result);
+      throw new Error(`Stash submit failed: ${result.error_description || result.error}`);
+    }
+
+    console.log('[DeviantArt] Stash submit success, itemid:', result.itemid);
+    return result as StashSubmitResponse;
+  } catch (error: any) {
+    console.error('[DeviantArt] Stash submit exception:', error.message);
+    throw error;
   }
-
-  return result as StashSubmitResponse;
 }
 
 export async function publishFromStash(
@@ -134,6 +160,8 @@ export async function publishFromStash(
   category: string = 'digitalart/drawings',
   isMature: boolean = false
 ): Promise<StashPublishResponse> {
+  console.log('[DeviantArt] Publishing from stash:', { stashId, category, isMature });
+  
   const params = new URLSearchParams({
     stashid: stashId.toString(),
     is_mature: isMature ? '1' : '0',
@@ -147,21 +175,37 @@ export async function publishFromStash(
     params.append('mature_level', 'moderate');
   }
 
-  const response = await fetch(`${DEVIANTART_API_BASE}/stash/publish`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
-  });
+  try {
+    const response = await fetch(`${DEVIANTART_API_BASE}/stash/publish`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
+    });
 
-  const result = await response.json();
-  
-  if (result.error) {
-    throw new Error(`Publish failed: ${result.error_description || result.error}`);
+    const responseText = await response.text();
+    console.log('[DeviantArt] Publish response status:', response.status);
+    console.log('[DeviantArt] Publish response:', responseText.substring(0, 500));
+    
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      throw new Error(`Publish failed: Invalid response - ${responseText.substring(0, 200)}`);
+    }
+    
+    if (result.error) {
+      console.error('[DeviantArt] Publish error:', result);
+      throw new Error(`Publish failed: ${result.error_description || result.error}`);
+    }
+
+    console.log('[DeviantArt] Publish success, url:', result.url);
+    return result as StashPublishResponse;
+  } catch (error: any) {
+    console.error('[DeviantArt] Publish exception:', error.message);
+    throw error;
   }
-
-  return result as StashPublishResponse;
 }
 
 export async function uploadAndPublish(
