@@ -1020,10 +1020,12 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
       const cursor = req.query.cursor as string | undefined;
       const take = req.query.limit ? parseInt(req.query.limit as string) : 20;
+      const sort = (req.query.sort as 'Newest' | 'Oldest') || 'Newest';
 
       const response = await getGenerationFeed(apiKey, {
         cursor,
         take,
+        sort,
       });
 
       // Transform generation feed items to a consistent format

@@ -96,6 +96,7 @@ export function UploadStep({
   const [isImporting, setIsImporting] = useState(false);
   const [deleteAfterImport, setDeleteAfterImport] = useState(false);
   const [loadingTarget, setLoadingTarget] = useState<number | null>(null);
+  const [civitaiSortOrder, setCivitaiSortOrder] = useState<'Newest' | 'Oldest'>('Newest');
   
   // Folder browser state
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
@@ -140,25 +141,25 @@ export function UploadStep({
     }
   };
 
-  const loadCivitaiImages = async (reset = false, targetCount?: number) => {
+  const loadCivitaiImages = async (reset = false, targetCount?: number, sortOrder?: 'Newest' | 'Oldest') => {
     if (civitaiLoading) return;
     
+    const currentSort = sortOrder || civitaiSortOrder;
     setCivitaiLoading(true);
     setError(null);
     if (targetCount) setLoadingTarget(targetCount);
     
     try {
-      // Fetch all available images first (up to a reasonable limit), then take what we need
-      // This ensures we always get the newest images regardless of API pagination order
+      // Fetch images up to target count using pagination
       const allFetchedImages: CivitaiImageData[] = [];
       let cursor: string | undefined = undefined;
-      const maxFetch = Math.max(targetCount || 50, 200); // Fetch at least 200 to have a good pool
+      const maxFetch = Math.max(targetCount || 40, 400); // Allow up to 400 images
       
-      // Always fetch fresh from the beginning to get newest images
+      // Always fetch fresh from the beginning
       while (allFetchedImages.length < maxFetch) {
         const fetchUrl: string = cursor 
-          ? `/api/civitai/images?cursor=${cursor}&limit=50`
-          : '/api/civitai/images?limit=50';
+          ? `/api/civitai/images?cursor=${cursor}&limit=40&sort=${currentSort}`
+          : `/api/civitai/images?limit=40&sort=${currentSort}`;
         
         const fetchResponse: Response = await fetch(fetchUrl);
         if (!fetchResponse.ok) {
@@ -174,19 +175,19 @@ export function UploadStep({
         allFetchedImages.push(...newImages);
         cursor = responseData.metadata.nextCursor;
         
-        // If no more pages, break
-        if (!cursor) break;
+        // If no more pages or we have enough, break
+        if (!cursor || allFetchedImages.length >= maxFetch) break;
       }
       
-      // Sort all fetched images by createdAt descending (newest first)
+      // Sort by createdAt based on sort order
       allFetchedImages.sort((a, b) => {
         const dateA = new Date(a.createdAt).getTime();
         const dateB = new Date(b.createdAt).getTime();
-        return dateB - dateA;
+        return currentSort === 'Newest' ? dateB - dateA : dateA - dateB;
       });
       
       // Take only the target count from the sorted list
-      const target = targetCount || 50;
+      const target = targetCount || 40;
       const resultImages = allFetchedImages.slice(0, target);
       const pendingBuffer = allFetchedImages.slice(target);
       
@@ -1193,16 +1194,40 @@ export function UploadStep({
                             Delete from Civitai after import
                           </Label>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button
+                            variant={civitaiSortOrder === 'Newest' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => {
+                              setCivitaiSortOrder('Newest');
+                              loadCivitaiImages(true, civitaiImages.length || 40, 'Newest');
+                            }}
+                            disabled={civitaiLoading}
+                            data-testid="button-sort-newest"
+                          >
+                            Newest
+                          </Button>
+                          <Button
+                            variant={civitaiSortOrder === 'Oldest' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => {
+                              setCivitaiSortOrder('Oldest');
+                              loadCivitaiImages(true, civitaiImages.length || 40, 'Oldest');
+                            }}
+                            disabled={civitaiLoading}
+                            data-testid="button-sort-oldest"
+                          >
+                            Oldest
+                          </Button>
+                          <span className="text-xs text-muted-foreground">|</span>
                           <span className="text-xs text-muted-foreground">Load:</span>
-                          {[40, 80, 120].map((count) => (
+                          {[40, 80, 120, 160, 200, 240, 280, 320, 360, 400].map((count) => (
                             <Button
                               key={count}
                               variant="outline"
                               size="sm"
                               onClick={() => loadCivitaiImages(true, count)}
                               disabled={civitaiLoading}
-                              className="h-7 px-2 text-xs"
                               data-testid={`button-load-${count}-civitai`}
                             >
                               {count}
@@ -1230,7 +1255,7 @@ export function UploadStep({
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <ArrowUpDown className="h-3 w-3" />
-                            <span>Sorted by: Newest first</span>
+                            <span>Sorted by: {civitaiSortOrder === 'Newest' ? 'Newest first' : 'Oldest first'}</span>
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {civitaiImages.length} images loaded
@@ -1277,16 +1302,40 @@ export function UploadStep({
 
                         {civitaiImages.length > 0 && (
                           <div className="flex justify-center gap-2 flex-wrap">
-                            <span className="text-xs text-muted-foreground self-center">Load newest:</span>
-                            {[40, 80, 120].map((count) => (
+                            <Button
+                              variant={civitaiSortOrder === 'Newest' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => {
+                                setCivitaiSortOrder('Newest');
+                                loadCivitaiImages(true, civitaiImages.length || 40, 'Newest');
+                              }}
+                              disabled={civitaiLoading}
+                              data-testid="button-sort-newest-2"
+                            >
+                              Newest
+                            </Button>
+                            <Button
+                              variant={civitaiSortOrder === 'Oldest' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => {
+                                setCivitaiSortOrder('Oldest');
+                                loadCivitaiImages(true, civitaiImages.length || 40, 'Oldest');
+                              }}
+                              disabled={civitaiLoading}
+                              data-testid="button-sort-oldest-2"
+                            >
+                              Oldest
+                            </Button>
+                            <span className="text-xs text-muted-foreground self-center">|</span>
+                            <span className="text-xs text-muted-foreground self-center">Load:</span>
+                            {[40, 80, 120, 160, 200, 240, 280, 320, 360, 400].map((count) => (
                               <Button
                                 key={count}
                                 variant="outline"
                                 size="sm"
                                 onClick={() => loadCivitaiImages(true, count)}
                                 disabled={civitaiLoading}
-                                className="h-7 px-3 text-xs"
-                                data-testid={`button-load-newest-${count}-civitai`}
+                                data-testid={`button-load-bottom-${count}-civitai`}
                               >
                                 {civitaiLoading && loadingTarget === count ? (
                                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />

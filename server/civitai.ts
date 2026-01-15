@@ -95,15 +95,17 @@ export async function getGenerationFeed(
   options: {
     cursor?: string;
     take?: number;
+    sort?: 'Newest' | 'Oldest';
   } = {}
 ): Promise<GenerationFeedResponse> {
   // Use the correct endpoint from civitai-sync: orchestrator.queryGeneratedImages
-  // Parameters: { authed: true, tags: ["gen"], cursor, sort: "Newest" }
+  // Parameters: { authed: true, tags: ["gen"], cursor, sort: "Newest" or "Oldest" }
+  const sortOrder = options.sort || 'Newest';
   const input: { json: { authed: boolean; tags: string[]; cursor?: string; sort?: string } } = {
     json: {
       authed: true,
       tags: ["gen"],
-      sort: "Newest",  // Ensure newest images are returned first
+      sort: sortOrder,
     }
   };
   
@@ -112,7 +114,7 @@ export async function getGenerationFeed(
   }
 
   const url = `${CIVITAI_TRPC_BASE}/orchestrator.queryGeneratedImages?input=${encodeURIComponent(JSON.stringify(input))}`;
-  console.log('Fetching Civitai generation feed from queryGeneratedImages...');
+  console.log(`Fetching Civitai generation feed (sort: ${sortOrder})...`);
 
   const response = await fetch(url, {
     headers: {
@@ -138,11 +140,11 @@ export async function getGenerationFeed(
   const result = data.result.data.json;
   const items: GenerationFeedImage[] = result.items || [];
   
-  // Sort by createdAt descending (newest first) since API may not support sort parameter
+  // Sort by createdAt based on sort order (in case API doesn't fully support it)
   items.sort((a, b) => {
     const dateA = new Date(a.createdAt).getTime();
     const dateB = new Date(b.createdAt).getTime();
-    return dateB - dateA; // Descending order (newest first)
+    return sortOrder === 'Newest' ? dateB - dateA : dateA - dateB;
   });
   
   return {
