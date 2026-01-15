@@ -64,6 +64,12 @@ A workflow automation app for processing Civitai images. The app automates the p
 - Clean, linear-inspired design
 
 ## Recent Changes
+- 2026-01-15: Auto Mode UI improvements
+  - Flipped toggle semantics: "Enable X" with toggle right = enabled (better UX than "Skip X")
+  - Settings accordions now conditionally render based on enable state (less clutter)
+  - Added Discord to Auto Mode with webhook preset selector
+  - Moved Description Template into Publish Settings accordion
+  - Settings persistence updated with skipDiscord and discordWebhookId fields
 - 2026-01-15: Discord webhook manager and improvements
   - Webhook manager: Save, edit, and delete up to 40 webhook presets with friendly names
   - Auto-batching: Automatically splits images into groups of 10 per message (Discord limit) with 1-second delay

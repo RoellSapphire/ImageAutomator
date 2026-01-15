@@ -40,7 +40,8 @@
     "skipEnhance": true,
     "skipExport": false,
     "skipPublish": false,
-    "skipDeviantArt": false
+    "skipDeviantArt": false,
+    "skipDiscord": true
   },
   "descriptionTemplates": [
     {
