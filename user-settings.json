@@ -36,11 +36,11 @@
     "enabled": false,
     "autoTitle": false,
     "selectedTemplateId": "4",
-    "skipRename": true,
+    "skipRename": false,
     "skipEnhance": true,
-    "skipExport": true,
-    "skipPublish": false,
-    "skipDeviantArt": false
+    "skipExport": false,
+    "skipPublish": true,
+    "skipDeviantArt": true
   },
   "descriptionTemplates": [
     {
