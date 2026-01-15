@@ -11,6 +11,7 @@ import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, Driv
 import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
 import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
 import * as deviantart from "./deviantart";
+import * as discord from "./discord";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -983,6 +984,99 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
     } catch (error) {
       console.error('Drive folders error:', error);
       res.status(500).json({ message: 'Failed to list folders', folders: [] });
+    }
+  });
+
+  // Discord API endpoints
+  app.get('/api/discord/status', async (req: Request, res: Response) => {
+    try {
+      const status = await discord.checkDiscordConnection();
+      res.json(status);
+    } catch (error: any) {
+      console.error('Discord status error:', error);
+      res.json({ connected: false, error: error.message });
+    }
+  });
+
+  app.get('/api/discord/guilds', async (req: Request, res: Response) => {
+    try {
+      const guilds = await discord.getDiscordGuilds();
+      res.json({ guilds });
+    } catch (error: any) {
+      console.error('Discord guilds error:', error);
+      res.status(500).json({ message: error.message, guilds: [] });
+    }
+  });
+
+  app.get('/api/discord/channels/:guildId', async (req: Request, res: Response) => {
+    try {
+      const { guildId } = req.params;
+      const channels = await discord.getDiscordChannels(guildId);
+      res.json({ channels });
+    } catch (error: any) {
+      console.error('Discord channels error:', error);
+      res.status(500).json({ message: error.message, channels: [] });
+    }
+  });
+
+  app.post('/api/discord/post', async (req: Request, res: Response) => {
+    try {
+      const { channelId, message, workflowId, imageIds } = req.body;
+      
+      if (!channelId) {
+        return res.status(400).json({ message: 'Channel ID is required' });
+      }
+      
+      if (!workflowId && (!imageIds || imageIds.length === 0)) {
+        return res.status(400).json({ message: 'Workflow ID or image IDs are required' });
+      }
+      
+      // Get images from workflow or by IDs
+      let images: ProcessedImage[] = [];
+      if (workflowId) {
+        const workflow = storage.getWorkflow(workflowId);
+        if (!workflow) {
+          return res.status(404).json({ message: 'Workflow not found' });
+        }
+        images = workflow.processedImages || workflow.images || [];
+      } else if (imageIds) {
+        for (const id of imageIds) {
+          const img = storage.findImageById(id);
+          if (img) images.push(img);
+        }
+      }
+      
+      if (images.length === 0) {
+        return res.status(400).json({ message: 'No images found to post' });
+      }
+      
+      // Read image buffers
+      const imageBuffers: { buffer: Buffer; filename: string }[] = [];
+      for (const img of images) {
+        const imgPath = img.processedPath || img.path;
+        if (fs.existsSync(imgPath)) {
+          const buffer = fs.readFileSync(imgPath);
+          imageBuffers.push({
+            buffer,
+            filename: path.basename(imgPath)
+          });
+        }
+      }
+      
+      if (imageBuffers.length === 0) {
+        return res.status(400).json({ message: 'No valid image files found' });
+      }
+      
+      const result = await discord.postToDiscord(channelId, message || '', imageBuffers);
+      
+      if (result.success) {
+        res.json({ success: true, messageId: result.messageId, count: imageBuffers.length });
+      } else {
+        res.status(500).json({ success: false, message: result.error });
+      }
+    } catch (error: any) {
+      console.error('Discord post error:', error);
+      res.status(500).json({ message: error.message });
     }
   });
 
