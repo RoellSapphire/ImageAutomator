@@ -8,13 +8,29 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FolderOpen, Cloud, CheckCircle, AlertCircle, Loader2, Download, ChevronRight, Home, ArrowLeft, Ban } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { FolderOpen, Cloud, CheckCircle, AlertCircle, Loader2, Download, ChevronRight, Home, ArrowLeft, Ban, MessageCircle, Send, Hash } from "lucide-react";
+import { SiDiscord } from "react-icons/si";
 import type { DriveConfig, ProcessedImage } from "@/lib/types";
+import { useToast } from "@/hooks/use-toast";
 
 interface DriveFolder {
   id: string;
   name: string;
   path: string;
+}
+
+interface DiscordGuild {
+  id: string;
+  name: string;
+  icon: string | null;
+}
+
+interface DiscordChannel {
+  id: string;
+  name: string;
+  type: number;
 }
 
 interface ExportStepProps {
@@ -31,6 +47,7 @@ interface ExportStepProps {
 }
 
 export function ExportStep({ images, config, onConfigChange, isConnected, connectedEmail, onRefreshStatus, onDisconnect, workflowId, skipExport = false, onSkipExportChange }: ExportStepProps) {
+  const { toast } = useToast();
   const [localConfig, setLocalConfig] = useState<DriveConfig>(config);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
@@ -38,10 +55,123 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<DriveFolder | null>(null);
+  
+  // Discord state
+  const [discordConnected, setDiscordConnected] = useState(false);
+  const [discordUsername, setDiscordUsername] = useState<string | null>(null);
+  const [discordLoading, setDiscordLoading] = useState(true);
+  const [discordGuilds, setDiscordGuilds] = useState<DiscordGuild[]>([]);
+  const [discordChannels, setDiscordChannels] = useState<DiscordChannel[]>([]);
+  const [selectedGuildId, setSelectedGuildId] = useState<string>('');
+  const [selectedChannelId, setSelectedChannelId] = useState<string>('');
+  const [discordMessage, setDiscordMessage] = useState('');
+  const [postingToDiscord, setPostingToDiscord] = useState(false);
+  const [loadingChannels, setLoadingChannels] = useState(false);
+  const [discordMode, setDiscordMode] = useState<'oauth' | 'webhook'>('webhook');
+  const [webhookUrl, setWebhookUrl] = useState('');
 
   useEffect(() => {
     onConfigChange(localConfig);
   }, [localConfig, onConfigChange]);
+
+  // Check Discord connection status on mount
+  useEffect(() => {
+    const checkDiscordStatus = async () => {
+      try {
+        const response = await fetch('/api/discord/status');
+        const data = await response.json();
+        setDiscordConnected(data.connected);
+        setDiscordUsername(data.username || null);
+        if (data.connected) {
+          loadDiscordGuilds();
+        }
+      } catch (error) {
+        console.error('Failed to check Discord status:', error);
+        setDiscordConnected(false);
+      } finally {
+        setDiscordLoading(false);
+      }
+    };
+    checkDiscordStatus();
+  }, []);
+
+  // Load channels when guild changes
+  useEffect(() => {
+    if (selectedGuildId) {
+      loadDiscordChannels(selectedGuildId);
+    } else {
+      setDiscordChannels([]);
+      setSelectedChannelId('');
+    }
+  }, [selectedGuildId]);
+
+  const loadDiscordGuilds = async () => {
+    try {
+      const response = await fetch('/api/discord/guilds');
+      const data = await response.json();
+      setDiscordGuilds(data.guilds || []);
+    } catch (error) {
+      console.error('Failed to load Discord guilds:', error);
+    }
+  };
+
+  const loadDiscordChannels = async (guildId: string) => {
+    setLoadingChannels(true);
+    try {
+      const response = await fetch(`/api/discord/channels/${guildId}`);
+      const data = await response.json();
+      setDiscordChannels(data.channels || []);
+    } catch (error) {
+      console.error('Failed to load Discord channels:', error);
+    } finally {
+      setLoadingChannels(false);
+    }
+  };
+
+  const handlePostToDiscord = async () => {
+    if (!workflowId) return;
+    
+    if (discordMode === 'oauth' && !selectedChannelId) return;
+    if (discordMode === 'webhook' && !webhookUrl) return;
+    
+    setPostingToDiscord(true);
+    try {
+      const endpoint = discordMode === 'webhook' ? '/api/discord/webhook' : '/api/discord/post';
+      const body = discordMode === 'webhook' 
+        ? { webhookUrl, message: discordMessage, workflowId }
+        : { channelId: selectedChannelId, message: discordMessage, workflowId };
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: "Posted to Discord",
+          description: `Successfully posted ${data.count} images to Discord`
+        });
+        setDiscordMessage('');
+      } else {
+        toast({
+          title: "Discord Error",
+          description: data.message || "Failed to post to Discord",
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Discord Error",
+        description: error.message || "Failed to post to Discord",
+        variant: "destructive"
+      });
+    } finally {
+      setPostingToDiscord(false);
+    }
+  };
 
   const handleConnectDrive = () => {
     const authWindow = window.open('/api/drive/oauth/start', '_blank');
@@ -307,6 +437,192 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
 
           <Card>
             <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <SiDiscord className="h-5 w-5" />
+                Post to Discord
+              </CardTitle>
+              <CardDescription>
+                Share your images to a Discord channel
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <Button
+                  variant={discordMode === 'webhook' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setDiscordMode('webhook')}
+                  data-testid="button-discord-webhook-mode"
+                >
+                  Webhook (Recommended)
+                </Button>
+                <Button
+                  variant={discordMode === 'oauth' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setDiscordMode('oauth')}
+                  data-testid="button-discord-oauth-mode"
+                >
+                  OAuth (Beta)
+                </Button>
+              </div>
+              
+              {discordMode === 'webhook' ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Webhook URL</Label>
+                    <Input
+                      placeholder="https://discord.com/api/webhooks/..."
+                      value={webhookUrl}
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      data-testid="input-webhook-url"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Create a webhook in your Discord channel settings and paste the URL here
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Message (optional)</Label>
+                    <Textarea
+                      placeholder="Add a message to accompany your images..."
+                      value={discordMessage}
+                      onChange={(e) => setDiscordMessage(e.target.value)}
+                      rows={2}
+                      data-testid="textarea-discord-message"
+                    />
+                  </div>
+                  
+                  <Button
+                    className="w-full"
+                    onClick={handlePostToDiscord}
+                    disabled={postingToDiscord || images.length === 0 || !webhookUrl}
+                    data-testid="button-post-discord"
+                  >
+                    {postingToDiscord ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4 mr-2" />
+                    )}
+                    Post {images.length} Images to Discord
+                  </Button>
+                </div>
+              ) : discordLoading ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : !discordConnected ? (
+                <div className="text-center p-4">
+                  <AlertCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground mb-3">Discord not connected</p>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Connect Discord in the Replit integrations to post images
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      setDiscordLoading(true);
+                      try {
+                        const response = await fetch('/api/discord/status');
+                        const data = await response.json();
+                        setDiscordConnected(data.connected);
+                        setDiscordUsername(data.username || null);
+                        if (data.connected) {
+                          loadDiscordGuilds();
+                        }
+                      } catch (error) {
+                        console.error('Failed to check Discord status:', error);
+                      } finally {
+                        setDiscordLoading(false);
+                      }
+                    }}
+                    data-testid="button-refresh-discord"
+                  >
+                    Refresh Connection
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    Connected as {discordUsername}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Server</Label>
+                    <Select value={selectedGuildId} onValueChange={setSelectedGuildId}>
+                      <SelectTrigger data-testid="select-discord-server">
+                        <SelectValue placeholder="Select a server" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {discordGuilds.map(guild => (
+                          <SelectItem key={guild.id} value={guild.id}>
+                            {guild.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {selectedGuildId && (
+                    <div className="space-y-2">
+                      <Label>Channel</Label>
+                      <Select 
+                        value={selectedChannelId} 
+                        onValueChange={setSelectedChannelId}
+                        disabled={loadingChannels}
+                      >
+                        <SelectTrigger data-testid="select-discord-channel">
+                          <SelectValue placeholder={loadingChannels ? "Loading..." : "Select a channel"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {discordChannels.map(channel => (
+                            <SelectItem key={channel.id} value={channel.id}>
+                              <span className="flex items-center gap-1">
+                                <Hash className="h-3 w-3" />
+                                {channel.name}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  
+                  {selectedChannelId && (
+                    <>
+                      <div className="space-y-2">
+                        <Label>Message (optional)</Label>
+                        <Textarea
+                          placeholder="Add a message to accompany your images..."
+                          value={discordMessage}
+                          onChange={(e) => setDiscordMessage(e.target.value)}
+                          rows={2}
+                          data-testid="textarea-discord-message-oauth"
+                        />
+                      </div>
+                      
+                      <Button
+                        className="w-full"
+                        onClick={handlePostToDiscord}
+                        disabled={postingToDiscord || images.length === 0}
+                        data-testid="button-post-discord-oauth"
+                      >
+                        {postingToDiscord ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4 mr-2" />
+                        )}
+                        Post {images.length} Images to Discord
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-lg">Export Summary</CardTitle>
             </CardHeader>
             <CardContent>
@@ -319,6 +635,12 @@ export function ExportStep({ images, config, onConfigChange, isConnected, connec
                   <span className="text-muted-foreground">Google Drive</span>
                   <Badge variant={isConnected ? "default" : "outline"}>
                     {isConnected ? "Connected" : "Not Connected"}
+                  </Badge>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Discord</span>
+                  <Badge variant={discordConnected ? "default" : "outline"}>
+                    {discordConnected ? "Connected" : "Not Connected"}
                   </Badge>
                 </div>
                 {isConnected && localConfig.folderPath && (

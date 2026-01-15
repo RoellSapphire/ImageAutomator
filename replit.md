@@ -8,7 +8,7 @@ A workflow automation app for processing Civitai images. The app automates the p
 - **Auto Mode**: Automatic processing of all workflow steps after upload
 - **Backend**: Express server with file processing using Sharp
 - **Frontend**: React with shadcn/ui components
-- **Integrations**: Google Drive (Replit connector), WordPress REST API
+- **Integrations**: Google Drive (Replit connector), WordPress REST API, Discord (Replit connector)
 
 ## Project Architecture
 
@@ -52,6 +52,11 @@ A workflow automation app for processing Civitai images. The app automates the p
 - `POST /api/drive/export` - Export images to Google Drive
 - `POST /api/wordpress/verify` - Verify WordPress credentials
 - `POST /api/publish` - Publish post to WordPress
+- `GET /api/discord/status` - Check Discord connection
+- `GET /api/discord/guilds` - List Discord servers
+- `GET /api/discord/channels/:guildId` - List server channels
+- `POST /api/discord/post` - Post images via OAuth
+- `POST /api/discord/webhook` - Post images via webhook URL
 
 ## User Preferences
 - Dark mode preferred
@@ -59,6 +64,11 @@ A workflow automation app for processing Civitai images. The app automates the p
 - Clean, linear-inspired design
 
 ## Recent Changes
+- 2026-01-15: Discord posting integration
+  - Added Discord posting to Export step with two modes: Webhook (recommended) and OAuth (beta)
+  - Webhook mode: Simple and reliable - paste a Discord webhook URL to post images
+  - OAuth mode: Uses Replit Discord connector for server/channel selection (may have permission limitations)
+  - Backend: REST API implementation with proper multipart file attachments
 - 2026-01-14: Bug fixes and improvements
   - DeviantArt upload: Added token refresh handling with retry on 401 errors
   - DeviantArt scheduler: Fixed scheduled upload persistence with filePath field

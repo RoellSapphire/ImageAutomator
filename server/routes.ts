@@ -1034,14 +1034,14 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       // Get images from workflow or by IDs
       let images: ProcessedImage[] = [];
       if (workflowId) {
-        const workflow = storage.getWorkflow(workflowId);
+        const workflow = await storage.getWorkflow(workflowId);
         if (!workflow) {
           return res.status(404).json({ message: 'Workflow not found' });
         }
         images = workflow.processedImages || workflow.images || [];
       } else if (imageIds) {
         for (const id of imageIds) {
-          const img = storage.findImageById(id);
+          const img = await storage.findImageById(id);
           if (img) images.push(img);
         }
       }
@@ -1053,7 +1053,7 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       // Read image buffers
       const imageBuffers: { buffer: Buffer; filename: string }[] = [];
       for (const img of images) {
-        const imgPath = img.processedPath || img.path;
+        const imgPath = img.processedPath || img.originalPath;
         if (fs.existsSync(imgPath)) {
           const buffer = fs.readFileSync(imgPath);
           imageBuffers.push({
@@ -1076,6 +1076,67 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       }
     } catch (error: any) {
       console.error('Discord post error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/discord/webhook', async (req: Request, res: Response) => {
+    try {
+      const { webhookUrl, message, workflowId, imageIds } = req.body;
+      
+      if (!webhookUrl) {
+        return res.status(400).json({ message: 'Webhook URL is required' });
+      }
+      
+      if (!workflowId && (!imageIds || imageIds.length === 0)) {
+        return res.status(400).json({ message: 'Workflow ID or image IDs are required' });
+      }
+      
+      // Get images from workflow or by IDs
+      let images: ProcessedImage[] = [];
+      if (workflowId) {
+        const workflow = await storage.getWorkflow(workflowId);
+        if (!workflow) {
+          return res.status(404).json({ message: 'Workflow not found' });
+        }
+        images = workflow.processedImages || workflow.images || [];
+      } else if (imageIds) {
+        for (const id of imageIds) {
+          const img = await storage.findImageById(id);
+          if (img) images.push(img);
+        }
+      }
+      
+      if (images.length === 0) {
+        return res.status(400).json({ message: 'No images found to post' });
+      }
+      
+      // Read image buffers
+      const imageBuffers: { buffer: Buffer; filename: string }[] = [];
+      for (const img of images) {
+        const imgPath = img.processedPath || img.originalPath;
+        if (fs.existsSync(imgPath)) {
+          const buffer = fs.readFileSync(imgPath);
+          imageBuffers.push({
+            buffer,
+            filename: path.basename(imgPath)
+          });
+        }
+      }
+      
+      if (imageBuffers.length === 0) {
+        return res.status(400).json({ message: 'No valid image files found' });
+      }
+      
+      const result = await discord.postToWebhook(webhookUrl, message || '', imageBuffers);
+      
+      if (result.success) {
+        res.json({ success: true, count: imageBuffers.length });
+      } else {
+        res.status(500).json({ success: false, message: result.error });
+      }
+    } catch (error: any) {
+      console.error('Discord webhook error:', error);
       res.status(500).json({ message: error.message });
     }
   });

@@ -1,5 +1,5 @@
-// Discord Integration - Replit Connector
-import { Client, GatewayIntentBits, TextChannel, AttachmentBuilder } from 'discord.js';
+// Discord Integration - Using REST API with OAuth tokens from Replit Connector
+import FormData from 'form-data';
 
 let connectionSettings: any;
 
@@ -29,7 +29,7 @@ async function getAccessToken(): Promise<string> {
     }
   ).then(res => res.json()).then(data => data.items?.[0]);
 
-  const accessToken = connectionSettings?.settings?.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
+  const accessToken = connectionSettings?.settings?.access_token || connectionSettings?.settings?.oauth?.credentials?.access_token;
 
   if (!connectionSettings || !accessToken) {
     throw new Error('Discord not connected');
@@ -37,16 +37,7 @@ async function getAccessToken(): Promise<string> {
   return accessToken;
 }
 
-async function getUncachableDiscordClient(): Promise<Client> {
-  const token = await getAccessToken();
-
-  const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
-  });
-
-  await client.login(token);
-  return client;
-}
+const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
 export interface DiscordGuild {
   id: string;
@@ -62,52 +53,77 @@ export interface DiscordChannel {
 
 export async function checkDiscordConnection(): Promise<{ connected: boolean; username?: string; error?: string }> {
   try {
-    const client = await getUncachableDiscordClient();
-    const username = client.user?.username || 'Unknown';
-    await client.destroy();
-    return { connected: true, username };
+    const token = await getAccessToken();
+    
+    const response = await fetch(`${DISCORD_API_BASE}/users/@me`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Discord user check failed:', response.status, text);
+      return { connected: false, error: `Failed to get user: ${response.status}` };
+    }
+    
+    const user = await response.json();
+    return { connected: true, username: user.username };
   } catch (error: any) {
+    console.error('Discord connection check error:', error);
     return { connected: false, error: error.message };
   }
 }
 
 export async function getDiscordGuilds(): Promise<DiscordGuild[]> {
-  const client = await getUncachableDiscordClient();
+  const token = await getAccessToken();
   
-  try {
-    const guilds = client.guilds.cache.map(guild => ({
-      id: guild.id,
-      name: guild.name,
-      icon: guild.iconURL()
-    }));
-    
-    return guilds;
-  } finally {
-    await client.destroy();
+  const response = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    const text = await response.text();
+    console.error('Discord guilds fetch failed:', response.status, text);
+    throw new Error(`Failed to fetch guilds: ${response.status}`);
   }
+  
+  const guilds = await response.json();
+  return guilds.map((guild: any) => ({
+    id: guild.id,
+    name: guild.name,
+    icon: guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : null
+  }));
 }
 
 export async function getDiscordChannels(guildId: string): Promise<DiscordChannel[]> {
-  const client = await getUncachableDiscordClient();
+  const token = await getAccessToken();
   
-  try {
-    const guild = client.guilds.cache.get(guildId);
-    if (!guild) {
-      throw new Error('Guild not found');
+  const response = await fetch(`${DISCORD_API_BASE}/guilds/${guildId}/channels`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
     }
-    
-    const channels = guild.channels.cache
-      .filter(channel => channel.type === 0)
-      .map(channel => ({
-        id: channel.id,
-        name: channel.name,
-        type: channel.type
-      }));
-    
-    return channels;
-  } finally {
-    await client.destroy();
+  });
+  
+  if (!response.ok) {
+    const text = await response.text();
+    console.error('Discord channels fetch failed:', response.status, text);
+    throw new Error(`Failed to fetch channels: ${response.status}`);
   }
+  
+  const channels = await response.json();
+  return channels
+    .filter((channel: any) => channel.type === 0)
+    .map((channel: any) => ({
+      id: channel.id,
+      name: channel.name,
+      type: channel.type
+    }));
 }
 
 export async function postToDiscord(
@@ -115,29 +131,113 @@ export async function postToDiscord(
   message: string,
   imageBuffers: { buffer: Buffer; filename: string }[]
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const client = await getUncachableDiscordClient();
+  const token = await getAccessToken();
   
   try {
-    const channel = await client.channels.fetch(channelId);
+    const formData = new FormData();
     
-    if (!channel || !(channel instanceof TextChannel)) {
-      throw new Error('Channel not found or not a text channel');
+    // Build attachments metadata for multipart
+    const attachments = imageBuffers.map((img, index) => ({
+      id: index,
+      filename: img.filename
+    }));
+    
+    const payload: any = {
+      attachments: attachments
+    };
+    if (message) {
+      payload.content = message;
     }
     
-    const attachments = imageBuffers.map(img => 
-      new AttachmentBuilder(img.buffer, { name: img.filename })
-    );
+    formData.append('payload_json', JSON.stringify(payload));
     
-    const sentMessage = await channel.send({
-      content: message || undefined,
-      files: attachments
+    imageBuffers.forEach((img, index) => {
+      formData.append(`files[${index}]`, img.buffer, {
+        filename: img.filename,
+        contentType: 'image/png'
+      });
     });
     
-    return { success: true, messageId: sentMessage.id };
+    const response = await fetch(`${DISCORD_API_BASE}/channels/${channelId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        ...formData.getHeaders()
+      },
+      body: formData.getBuffer()
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Discord post failed:', response.status, text);
+      
+      if (response.status === 403) {
+        return { success: false, error: 'Missing permissions to post messages. Try using a webhook URL instead.' };
+      }
+      if (response.status === 401) {
+        return { success: false, error: 'OAuth token expired or invalid. Try using a webhook URL instead.' };
+      }
+      
+      return { success: false, error: `Failed to post: ${response.status} - ${text}` };
+    }
+    
+    const result = await response.json();
+    return { success: true, messageId: result.id };
   } catch (error: any) {
     console.error('Discord post error:', error);
     return { success: false, error: error.message };
-  } finally {
-    await client.destroy();
+  }
+}
+
+export async function postToWebhook(
+  webhookUrl: string,
+  message: string,
+  imageBuffers: { buffer: Buffer; filename: string }[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!webhookUrl.includes('discord.com/api/webhooks/')) {
+      return { success: false, error: 'Invalid Discord webhook URL' };
+    }
+    
+    const formData = new FormData();
+    
+    // Build attachments metadata for multipart
+    const attachments = imageBuffers.map((img, index) => ({
+      id: index,
+      filename: img.filename
+    }));
+    
+    const payload: any = {
+      attachments: attachments
+    };
+    if (message) {
+      payload.content = message;
+    }
+    
+    formData.append('payload_json', JSON.stringify(payload));
+    
+    imageBuffers.forEach((img, index) => {
+      formData.append(`files[${index}]`, img.buffer, {
+        filename: img.filename,
+        contentType: 'image/png'
+      });
+    });
+    
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: formData.getHeaders(),
+      body: formData.getBuffer()
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Discord webhook post failed:', response.status, text);
+      return { success: false, error: `Failed to post: ${response.status}` };
+    }
+    
+    return { success: true };
+  } catch (error: any) {
+    console.error('Discord webhook error:', error);
+    return { success: false, error: error.message };
   }
 }
