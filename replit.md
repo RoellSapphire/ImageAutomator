@@ -64,6 +64,11 @@ A workflow automation app for processing Civitai images. The app automates the p
 - Clean, linear-inspired design
 
 ## Recent Changes
+- 2026-01-15: Discord webhook manager and improvements
+  - Webhook manager: Save, edit, and delete up to 40 webhook presets with friendly names
+  - Auto-batching: Automatically splits images into groups of 10 per message (Discord limit) with 1-second delay
+  - OAuth error handling: Clear error messages when channel loading fails, recommends webhook mode
+  - Webhook CRUD API: GET/POST/PUT/DELETE /api/discord/webhooks endpoints
 - 2026-01-15: Discord posting integration
   - Added Discord posting to Export step with two modes: Webhook (recommended) and OAuth (beta)
   - Webhook mode: Simple and reliable - paste a Discord webhook URL to post images
