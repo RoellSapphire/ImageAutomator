@@ -64,6 +64,12 @@ A workflow automation app for processing Civitai images. The app automates the p
 - Clean, linear-inspired design
 
 ## Recent Changes
+- 2026-01-16: Delete originals after processing
+  - New toggle in Auto Mode: "Delete originals after processing" (defaults to off for safety)
+  - Server-side cleanup of uploaded files after successful processing
+  - Safety-first approach: Only deletes when ALL images process successfully
+  - Partial failures preserve all original files with informative message
+  - Empty upload folders are automatically cleaned up
 - 2026-01-15: Auto Mode UI improvements
   - Flipped toggle semantics: "Enable X" with toggle right = enabled (better UX than "Skip X")
   - Settings accordions now conditionally render based on enable state (less clutter)
