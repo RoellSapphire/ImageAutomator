@@ -41,7 +41,8 @@
     "skipExport": true,
     "skipPublish": false,
     "skipDeviantArt": true,
-    "skipDiscord": true
+    "skipDiscord": true,
+    "deleteOriginalsAfterProcess": false
   },
   "descriptionTemplates": [
     {

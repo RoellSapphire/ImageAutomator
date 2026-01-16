@@ -602,6 +602,15 @@ export function UploadStep({
                   data-testid="switch-enable-discord"
                 />
               </div>
+              <div className="flex items-center gap-2 border-l pl-3 ml-1">
+                <Label htmlFor="delete-originals" className="text-sm text-muted-foreground">Delete originals</Label>
+                <Switch
+                  id="delete-originals"
+                  checked={autoModeSettings.deleteOriginalsAfterProcess}
+                  onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, deleteOriginalsAfterProcess: enabled })}
+                  data-testid="switch-delete-originals"
+                />
+              </div>
             </div>
             {isAutoRunning && (
               <div className="flex items-center gap-2 text-primary text-sm mt-2">

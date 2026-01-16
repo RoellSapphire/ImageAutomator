@@ -58,6 +58,7 @@ const DEFAULT_AUTO_MODE: AutoModeSettings = {
   skipDeviantArt: false,
   skipDiscord: true,
   discordWebhookId: undefined,
+  deleteOriginalsAfterProcess: false,
 };
 
 const DEFAULT_TEMPLATES: DescriptionTemplate[] = [

@@ -165,6 +165,7 @@ export const autoModeSettingsSchema = z.object({
   skipDeviantArt: z.boolean().default(false),
   skipDiscord: z.boolean().default(true), // Discord disabled by default
   discordWebhookId: z.string().optional(), // Selected webhook preset ID
+  deleteOriginalsAfterProcess: z.boolean().default(false), // Delete uploaded originals after processing
 });
 
 export type AutoModeSettings = z.infer<typeof autoModeSettingsSchema>;
