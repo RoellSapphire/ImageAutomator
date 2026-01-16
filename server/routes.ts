@@ -288,12 +288,13 @@ export async function registerRoutes(
 
   app.post('/api/process', async (req: Request, res: Response) => {
     try {
-      const { workflowId, renameConfig, enhanceConfig, skipRename, skipEnhance } = req.body as {
+      const { workflowId, renameConfig, enhanceConfig, skipRename, skipEnhance, deleteOriginalsAfterProcess } = req.body as {
         workflowId: string;
         renameConfig: RenameConfig;
         enhanceConfig: EnhanceConfig;
         skipRename?: boolean;
         skipEnhance?: boolean;
+        deleteOriginalsAfterProcess?: boolean;
       };
 
       const workflow = await storage.getWorkflow(workflowId);
@@ -470,9 +471,50 @@ export async function registerRoutes(
         currentStep: 4,
       });
 
+      // Delete original files if enabled and ALL images were successfully processed
+      let deletedCount = 0;
+      let deletionSkipped = false;
+      const successCount = processedImages.filter(i => i.status === 'completed').length;
+      const allSuccessful = successCount === processedImages.length;
+      
+      if (deleteOriginalsAfterProcess) {
+        if (allSuccessful) {
+          for (const image of processedImages) {
+            try {
+              if (image.originalPath && fs.existsSync(image.originalPath)) {
+                fs.unlinkSync(image.originalPath);
+                deletedCount++;
+              }
+            } catch (err) {
+              console.error(`Failed to delete original: ${image.originalPath}`, err);
+            }
+          }
+          // Try to remove the uploads folder if empty
+          const uploadsDir = path.join(UPLOAD_DIR, workflowId);
+          try {
+            const remaining = fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir) : [];
+            if (remaining.length === 0) {
+              fs.rmdirSync(uploadsDir);
+            }
+          } catch (err) {
+            // Ignore - folder may not be empty or already deleted
+          }
+        } else {
+          deletionSkipped = true;
+          console.log(`Skipping original deletion: only ${successCount}/${processedImages.length} images processed successfully`);
+        }
+      }
+
+      let message = `Processed ${successCount} images`;
+      if (deletedCount > 0) {
+        message += `, deleted ${deletedCount} originals`;
+      } else if (deletionSkipped) {
+        message += ` (originals kept due to partial failures)`;
+      }
+
       res.json({
         images: processedImages,
-        message: `Processed ${processedImages.filter(i => i.status === 'completed').length} images`,
+        message,
       });
 
     } catch (error) {

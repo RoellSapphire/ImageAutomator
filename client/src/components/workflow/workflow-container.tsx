@@ -259,6 +259,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           enhanceConfig,
           skipRename: autoModeSettings.skipRename,
           skipEnhance: autoModeSettings.skipEnhance,
+          deleteOriginalsAfterProcess: autoModeSettings.deleteOriginalsAfterProcess,
         }),
       });
       
@@ -609,6 +610,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             enhanceConfig,
             skipRename,
             skipEnhance,
+            deleteOriginalsAfterProcess: autoModeSettings.deleteOriginalsAfterProcess,
           }),
         });
         
