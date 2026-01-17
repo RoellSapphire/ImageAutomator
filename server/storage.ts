@@ -57,7 +57,9 @@ export class MemStorage implements IStorage {
 
   async saveUserSettings(settings: UserSettings): Promise<void> {
     try {
-      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+      const existingSettings = await this.getUserSettings();
+      const mergedSettings = { ...existingSettings, ...settings };
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(mergedSettings, null, 2));
     } catch (e) {
       console.error("Failed to save user settings:", e);
     }
