@@ -107,6 +107,9 @@ export function UploadStep({
   
   // Discord webhooks state
   const [discordWebhooks, setDiscordWebhooks] = useState<{ id: string; name: string; webhookUrl: string }[]>([]);
+  const [newWebhookName, setNewWebhookName] = useState('');
+  const [newWebhookUrl, setNewWebhookUrl] = useState('');
+  const [addingWebhook, setAddingWebhook] = useState(false);
   
   // Load discord webhooks on mount
   const loadDiscordWebhooks = useCallback(async () => {
@@ -125,6 +128,35 @@ export function UploadStep({
   useEffect(() => {
     loadDiscordWebhooks();
   }, [loadDiscordWebhooks]);
+
+  const handleAddWebhook = async () => {
+    if (!newWebhookName.trim() || !newWebhookUrl.trim()) return;
+    
+    setAddingWebhook(true);
+    try {
+      const response = await fetch('/api/discord/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newWebhookName.trim(), webhookUrl: newWebhookUrl.trim() })
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to add webhook');
+      }
+      
+      const newWebhook = await response.json();
+      setDiscordWebhooks([...discordWebhooks, newWebhook]);
+      setNewWebhookName('');
+      setNewWebhookUrl('');
+      // Auto-select the new webhook
+      onAutoModeChange({ ...autoModeSettings, discordWebhookId: newWebhook.id });
+    } catch (error) {
+      console.error('Failed to add webhook:', error);
+    } finally {
+      setAddingWebhook(false);
+    }
+  };
 
   const loadFolders = async (parentId?: string) => {
     setLoadingFolders(true);
@@ -1013,33 +1045,63 @@ export function UploadStep({
                     </AccordionTrigger>
                     <AccordionContent>
                       <div className="space-y-3 py-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Webhook Channel</Label>
-                          <Select
-                            value={autoModeSettings.discordWebhookId || "none"}
-                          onValueChange={(value) => onAutoModeChange({ 
-                            ...autoModeSettings, 
-                            discordWebhookId: value === "none" ? undefined : value 
-                          })}
-                        >
-                          <SelectTrigger className="h-8 text-sm" data-testid="select-discord-webhook-auto">
-                            <SelectValue placeholder="Select a webhook" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">No webhook selected</SelectItem>
-                            {discordWebhooks.map((webhook) => (
-                              <SelectItem key={webhook.id} value={webhook.id}>
-                                {webhook.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {discordWebhooks.length === 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          No webhooks saved. Add webhooks in the Export step's Discord section.
-                        </p>
-                      )}
+                        {discordWebhooks.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Saved Webhooks</Label>
+                            <Select
+                              value={autoModeSettings.discordWebhookId || "none"}
+                              onValueChange={(value) => onAutoModeChange({ 
+                                ...autoModeSettings, 
+                                discordWebhookId: value === "none" ? undefined : value 
+                              })}
+                            >
+                              <SelectTrigger className="h-8 text-sm" data-testid="select-discord-webhook-auto">
+                                <SelectValue placeholder="Select a webhook" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No webhook selected</SelectItem>
+                                {discordWebhooks.map((webhook) => (
+                                  <SelectItem key={webhook.id} value={webhook.id}>
+                                    {webhook.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        
+                        <div className="space-y-2 pt-2 border-t">
+                          <Label className="text-xs">Add New Webhook</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Channel name"
+                              value={newWebhookName}
+                              onChange={(e) => setNewWebhookName(e.target.value)}
+                              className="h-8 text-sm flex-1"
+                              data-testid="input-auto-webhook-name"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Webhook URL"
+                              value={newWebhookUrl}
+                              onChange={(e) => setNewWebhookUrl(e.target.value)}
+                              className="h-8 text-sm flex-1"
+                              data-testid="input-auto-webhook-url"
+                            />
+                            <Button
+                              size="sm"
+                              onClick={handleAddWebhook}
+                              disabled={!newWebhookName.trim() || !newWebhookUrl.trim() || addingWebhook}
+                              data-testid="button-add-webhook-auto"
+                            >
+                              {addingWebhook ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Get a webhook URL from Discord: Server Settings → Integrations → Webhooks
+                          </p>
+                        </div>
                       </div>
                     </AccordionContent>
                   </AccordionItem>

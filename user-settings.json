@@ -23,7 +23,7 @@
   "driveConfig": {
     "folderPath": "/Posted/_posted/SubscribersPassionate",
     "createSubfolder": true,
-    "subfolderName": "UnderConstruction",
+    "subfolderName": "Newcontent",
     "folderId": "1tBJs2F1EQOWaNR4oerLQXJ7-NGpIabez"
   },
   "wordpressConfig": {
@@ -37,12 +37,12 @@
     "autoTitle": true,
     "selectedTemplateId": "5",
     "skipRename": true,
-    "skipEnhance": true,
-    "skipExport": true,
+    "skipEnhance": false,
+    "skipExport": false,
     "skipPublish": false,
     "skipDeviantArt": true,
-    "skipDiscord": true,
-    "deleteOriginalsAfterProcess": false
+    "skipDiscord": false,
+    "deleteOriginalsAfterProcess": true
   },
   "descriptionTemplates": [
     {
