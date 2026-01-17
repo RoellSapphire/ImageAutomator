@@ -175,6 +175,22 @@ export function UploadStep({
 
   const openFolderBrowser = () => {
     setShowFolderBrowser(true);
+    
+    // If there's a saved folder, navigate to it instead of starting from root
+    if (driveConfig?.folderId && driveConfig?.folderPath && driveConfig.folderPath !== '/') {
+      // Parse the folder path to reconstruct navigation
+      const pathParts = driveConfig.folderPath.split('/').filter(Boolean);
+      if (pathParts.length > 0) {
+        // We have the final folder ID but not intermediate ones
+        // So we load the saved folder's contents directly
+        setFolderPath([{ id: driveConfig.folderId, name: pathParts[pathParts.length - 1] }]);
+        setSelectedFolder(null);
+        loadFolders(driveConfig.folderId);
+        return;
+      }
+    }
+    
+    // No saved folder, start from root
     setFolderPath([]);
     setSelectedFolder(null);
     loadFolders();

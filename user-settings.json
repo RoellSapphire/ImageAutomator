@@ -34,7 +34,8 @@
   },
   "autoModeSettings": {
     "enabled": true,
-    "autoTitle": true,
+    "autoTitle": false,
+    "customTitle": "Aira",
     "selectedTemplateId": "1",
     "skipRename": true,
     "skipEnhance": true,
@@ -42,7 +43,7 @@
     "skipPublish": false,
     "skipDeviantArt": true,
     "skipDiscord": false,
-    "discordWebhookId": "51e2c902-d6da-4d3f-bcc9-6e097a70c175",
+    "discordWebhookId": "03530f58-47bc-4cc3-805c-691faba0beca",
     "deleteOriginalsAfterProcess": true
   },
   "descriptionTemplates": [
@@ -95,6 +96,13 @@
       "id": "10",
       "name": "Custom",
       "content": ""
+    }
+  ],
+  "discordWebhooks": [
+    {
+      "id": "03530f58-47bc-4cc3-805c-691faba0beca",
+      "name": "AirA",
+      "webhookUrl": "https://discord.com/api/webhooks/1461880415605231718/Snvp9EMUPenwbNi3TPCSDboIfgmVpSSSa8Ab2FDLYZFODOArvZvsjrH8Fw98RHFs_idX"
     }
   ]
 }
