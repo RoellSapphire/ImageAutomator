@@ -23,7 +23,7 @@
   "driveConfig": {
     "folderPath": "/Posted/_posted/SubscribersPassionate",
     "createSubfolder": true,
-    "subfolderName": "Newcontent",
+    "subfolderName": "Aira",
     "folderId": "1tBJs2F1EQOWaNR4oerLQXJ7-NGpIabez"
   },
   "wordpressConfig": {
@@ -35,13 +35,14 @@
   "autoModeSettings": {
     "enabled": true,
     "autoTitle": true,
-    "selectedTemplateId": "5",
+    "selectedTemplateId": "1",
     "skipRename": true,
-    "skipEnhance": false,
+    "skipEnhance": true,
     "skipExport": false,
     "skipPublish": false,
     "skipDeviantArt": true,
     "skipDiscord": false,
+    "discordWebhookId": "0d4d8642-fe6f-4750-8a5b-d8fd337f9352",
     "deleteOriginalsAfterProcess": true
   },
   "descriptionTemplates": [

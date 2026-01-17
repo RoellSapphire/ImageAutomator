@@ -157,6 +157,8 @@ export type DescriptionTemplate = z.infer<typeof descriptionTemplateSchema>;
 export const autoModeSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   autoTitle: z.boolean().default(true),
+  customTitle: z.string().optional(), // Custom title for WordPress post (used when autoTitle is false)
+  customContent: z.string().optional(), // Custom content/text to add to WordPress post
   selectedTemplateId: z.string().optional(),
   skipRename: z.boolean().default(false),
   skipEnhance: z.boolean().default(false),

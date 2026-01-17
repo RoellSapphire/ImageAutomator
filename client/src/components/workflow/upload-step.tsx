@@ -919,6 +919,36 @@ export function UploadStep({
                       {wordpressConfig && onWordpressConfigChange && (
                         <div className="space-y-3 py-2">
                           <div className="space-y-1">
+                            <Label className="text-xs">Post Title</Label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={autoModeSettings.customTitle || ""}
+                                onChange={(e) => onAutoModeChange({ 
+                                  ...autoModeSettings, 
+                                  customTitle: e.target.value,
+                                  autoTitle: !e.target.value
+                                })}
+                                placeholder="Auto-generated (e.g., Jan 17 Update)"
+                                className="h-8 text-sm flex-1"
+                                data-testid="input-auto-custom-title"
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground">Leave blank for auto-generated title</p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Post Content</Label>
+                            <textarea
+                              value={autoModeSettings.customContent || ""}
+                              onChange={(e) => onAutoModeChange({ 
+                                ...autoModeSettings, 
+                                customContent: e.target.value 
+                              })}
+                              placeholder="Add custom text to your post..."
+                              className="w-full h-20 px-3 py-2 text-sm border rounded-md bg-background resize-none"
+                              data-testid="input-auto-custom-content"
+                            />
+                          </div>
+                          <div className="space-y-1">
                             <Label className="text-xs">Description Template</Label>
                             <Select
                               value={autoModeSettings.selectedTemplateId || "none"}

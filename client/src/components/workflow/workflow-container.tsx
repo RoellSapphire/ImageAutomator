@@ -50,6 +50,8 @@ const DEFAULT_ENHANCE_CONFIG: EnhanceConfig = {
 const DEFAULT_AUTO_MODE: AutoModeSettings = {
   enabled: false,
   autoTitle: true,
+  customTitle: undefined,
+  customContent: undefined,
   selectedTemplateId: undefined,
   skipRename: false,
   skipEnhance: false,
@@ -357,10 +359,18 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
       
       if (!autoModeSettings.skipPublish && wordpressConfig.siteUrl && wordpressConfig.username && wordpressConfig.applicationPassword) {
         const template = descriptionTemplates.find(t => t.id === autoModeSettings.selectedTemplateId);
-        const postTitle = autoModeSettings.autoTitle 
-          ? generateAutoTitle() 
-          : (template?.title || wordpressConfig.postTitle || generateAutoTitle());
-        const postContent = template ? template.content : wordpressConfig.postContent;
+        // Use custom title if provided, otherwise auto-generate
+        const postTitle = autoModeSettings.customTitle?.trim() 
+          ? autoModeSettings.customTitle 
+          : generateAutoTitle();
+        // Build post content: custom content + template content
+        let postContent = '';
+        if (autoModeSettings.customContent?.trim()) {
+          postContent += autoModeSettings.customContent + '\n\n';
+        }
+        if (template?.content) {
+          postContent += template.content;
+        }
         
         const publishResponse = await fetch('/api/publish', {
           method: 'POST',
