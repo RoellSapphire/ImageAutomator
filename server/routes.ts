@@ -8,7 +8,7 @@ import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
 import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage } from "@shared/schema";
-import { checkDriveConnection, findOrCreateFolder, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
+import { checkDriveConnection, findOrCreateFolder, findOrCreateSubfolderById, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
 import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
 import * as deviantart from "./deviantart";
 import * as discord from "./discord";
@@ -622,12 +622,28 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Workflow not found' });
       }
 
-      let folderPath = driveConfig.folderPath || '/Civitai Images';
-      if (driveConfig.createSubfolder && driveConfig.subfolderName) {
-        folderPath = `${folderPath}/${driveConfig.subfolderName}`;
+      let targetFolderId: string;
+
+      if (driveConfig.folderId) {
+        console.log(`[Drive Export] Using selected folder ID: ${driveConfig.folderId}`);
+        targetFolderId = driveConfig.folderId;
+        
+        if (driveConfig.createSubfolder && driveConfig.subfolderName && driveConfig.subfolderName.trim()) {
+          const subfolderName = driveConfig.subfolderName.trim();
+          console.log(`[Drive Export] Creating/finding subfolder: ${subfolderName} in folder ${targetFolderId}`);
+          targetFolderId = await findOrCreateSubfolderById(targetFolderId, subfolderName);
+          console.log(`[Drive Export] Subfolder ID: ${targetFolderId}`);
+        }
+      } else {
+        let folderPath = driveConfig.folderPath || '/Civitai Images';
+        if (driveConfig.createSubfolder && driveConfig.subfolderName) {
+          folderPath = `${folderPath}/${driveConfig.subfolderName}`;
+        }
+        console.log(`[Drive Export] No folder ID provided, using path: ${folderPath}`);
+        targetFolderId = await findOrCreateFolder(folderPath);
       }
 
-      const folderId = await findOrCreateFolder(folderPath);
+      console.log(`[Drive Export] Final target folder ID: ${targetFolderId}`);
       const uploadedFiles: { name: string; id: string; link: string }[] = [];
 
       for (const image of workflow.images) {
@@ -641,14 +657,16 @@ export async function registerRoutes(
                         'image/jpeg';
 
         try {
-          const result = await uploadFileToDrive(imagePath, image.newName, mimeType, folderId);
+          console.log(`[Drive Export] Uploading ${image.newName} to folder ${targetFolderId}`);
+          const result = await uploadFileToDrive(imagePath, image.newName, mimeType, targetFolderId);
           uploadedFiles.push({
             name: image.newName,
             id: result.id,
             link: result.webViewLink,
           });
+          console.log(`[Drive Export] Successfully uploaded ${image.newName}, file ID: ${result.id}`);
         } catch (uploadError) {
-          console.error(`Failed to upload ${image.newName} to Drive:`, uploadError);
+          console.error(`[Drive Export] Failed to upload ${image.newName}:`, uploadError);
         }
       }
 

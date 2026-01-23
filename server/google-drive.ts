@@ -212,6 +212,33 @@ export async function findOrCreateFolder(folderPath: string): Promise<string> {
   return parentId;
 }
 
+export async function findOrCreateSubfolderById(parentFolderId: string, subfolderName: string): Promise<string> {
+  const drive = await getUncachableGoogleDriveClient();
+  
+  const escapedName = subfolderName.replace(/'/g, "\\'");
+  const query = `'${parentFolderId}' in parents and name = '${escapedName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  
+  const response = await drive.files.list({
+    q: query,
+    fields: 'files(id, name)',
+  });
+
+  if (response.data.files && response.data.files.length > 0) {
+    return response.data.files[0].id || parentFolderId;
+  }
+
+  const createResponse = await drive.files.create({
+    requestBody: {
+      name: subfolderName,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentFolderId],
+    },
+    fields: 'id',
+  });
+  
+  return createResponse.data.id || parentFolderId;
+}
+
 export async function uploadFileToDrive(
   filePath: string,
   fileName: string,
