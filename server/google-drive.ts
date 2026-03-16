@@ -182,12 +182,22 @@ export async function listFolders(parentId?: string): Promise<{ id: string; name
 
 export async function findOrCreateFolder(folderPath: string): Promise<string> {
   const drive = await getUncachableGoogleDriveClient();
-  const pathParts = folderPath.split('/').filter(p => p.length > 0);
-  
+
+  // Normalize path: convert backslashes to forward slashes and strip Windows/Google Drive Stream prefixes
+  let normalizedPath = folderPath.replace(/\\/g, '/');
+  // Strip common prefixes like "G:/My Drive/", "H:/My Drive/", etc.
+  normalizedPath = normalizedPath.replace(/^[A-Za-z]:\/My Drive\//i, '/');
+  // Also handle "G:/Shared drives/..."
+  normalizedPath = normalizedPath.replace(/^[A-Za-z]:\/Shared drives\//i, '/');
+
+  const pathParts = normalizedPath.split('/').filter(p => p.length > 0);
+
+  // Escape single quotes in folder names for the Drive API query
   let parentId = 'root';
   
   for (const folderName of pathParts) {
-    const query = `'${parentId}' in parents and name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const escapedFolderName = folderName.replace(/'/g, "\\'");
+    const query = `'${parentId}' in parents and name = '${escapedFolderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     
     const response = await drive.files.list({
       q: query,

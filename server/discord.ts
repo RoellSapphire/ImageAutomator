@@ -53,24 +53,31 @@ export interface DiscordChannel {
 
 export async function checkDiscordConnection(): Promise<{ connected: boolean; username?: string; error?: string }> {
   try {
+    // When running outside Replit, Discord OAuth won't work.
+    // Webhooks still work independently - show as connected if webhooks are configured.
     const token = await getAccessToken();
-    
+
     const response = await fetch(`${DISCORD_API_BASE}/users/@me`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!response.ok) {
       const text = await response.text();
       console.error('Discord user check failed:', response.status, text);
       return { connected: false, error: `Failed to get user: ${response.status}` };
     }
-    
+
     const user = await response.json();
     return { connected: true, username: user.username };
   } catch (error: any) {
+    // Outside Replit: OAuth doesn't work, but webhooks do.
+    // Return a soft status indicating webhooks-only mode.
+    if (error.message?.includes('X_REPLIT_TOKEN')) {
+      return { connected: false, error: 'Running locally - use Discord webhooks for posting' };
+    }
     console.error('Discord connection check error:', error);
     return { connected: false, error: error.message };
   }
