@@ -15,6 +15,7 @@ export type {
   DescriptionTemplate,
   AutoModeSettings,
   FolderMapping,
+  WorkflowPreset,
 } from "@shared/schema";
 
 // Workflow step definitions

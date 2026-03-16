@@ -7,15 +7,16 @@ import { RenameStep } from "./rename-step";
 import { EnhanceStep } from "./enhance-step";
 import { ExportStep } from "./export-step";
 import { PublishStep } from "./publish-step";
-import type { 
-  ProcessedImage, 
-  RenameConfig, 
-  EnhanceConfig, 
-  DriveConfig, 
+import type {
+  ProcessedImage,
+  RenameConfig,
+  EnhanceConfig,
+  DriveConfig,
   WordPressConfig,
   ARMemberPlan,
   DescriptionTemplate,
-  AutoModeSettings
+  AutoModeSettings,
+  WorkflowPreset
 } from "@/lib/types";
 
 interface WorkflowContainerProps {
@@ -92,6 +93,7 @@ async function loadServerSettings(): Promise<{
   wordpressConfig?: Partial<WordPressConfig>;
   autoModeSettings?: AutoModeSettings;
   descriptionTemplates?: DescriptionTemplate[];
+  activePresetId?: string;
 } | null> {
   try {
     const response = await fetch('/api/settings');
@@ -111,6 +113,7 @@ async function saveServerSettings(settings: {
   wordpressConfig: Partial<WordPressConfig>;
   autoModeSettings?: AutoModeSettings;
   descriptionTemplates?: DescriptionTemplate[];
+  activePresetId?: string;
 }) {
   try {
     const toSave = {
@@ -162,6 +165,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [descriptionTemplates, setDescriptionTemplates] = useState<DescriptionTemplate[]>(DEFAULT_TEMPLATES);
   const [isAutoRunning, setIsAutoRunning] = useState(false);
   const [publishedPostUrl, setPublishedPostUrl] = useState<string | null>(null);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
   
   const autoModeSettingsRef = useRef(autoModeSettings);
   useEffect(() => {
@@ -185,6 +189,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           // skipDeviantArt removed - no longer needed
         }
         if (saved.descriptionTemplates?.length) setDescriptionTemplates(saved.descriptionTemplates);
+        if (saved.activePresetId) setActivePresetId(saved.activePresetId);
       }
       setSettingsLoaded(true);
     });
@@ -203,9 +208,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
 
   useEffect(() => {
     if (settingsLoaded) {
-      saveServerSettings({ renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates });
+      saveServerSettings({ renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, activePresetId: activePresetId || undefined });
     }
-  }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, settingsLoaded]);
+  }, [renameConfig, enhanceConfig, driveConfig, wordpressConfig, autoModeSettings, descriptionTemplates, activePresetId, settingsLoaded]);
 
   // Auto-verify WordPress and fetch ARMember plans on settings load
   useEffect(() => {
@@ -564,6 +569,43 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
     setImages(prev => prev.filter(img => img.id !== imageId));
   }, [workflowId]);
 
+  const handlePresetSelect = useCallback(async (presetId: string | null) => {
+    setActivePresetId(presetId);
+    if (!presetId) return;
+
+    try {
+      const response = await fetch('/api/presets');
+      if (!response.ok) return;
+      const presets: WorkflowPreset[] = await response.json();
+      const preset = presets.find(p => p.id === presetId);
+      if (!preset) return;
+
+      // Apply preset values to configs
+      if (preset.renamePrefix) {
+        setRenameConfig(prev => ({ ...prev, prefix: preset.renamePrefix! }));
+      }
+      if (preset.driveSubfolderName) {
+        setDriveConfig(prev => ({ ...prev, createSubfolder: true, subfolderName: preset.driveSubfolderName! }));
+      }
+      if (preset.postTitle) {
+        setAutoModeSettings(prev => ({ ...prev, autoTitle: false, customTitle: preset.postTitle! }));
+      }
+      if (preset.postDescription) {
+        setAutoModeSettings(prev => ({ ...prev, customContent: preset.postDescription! }));
+      }
+      if (preset.discordWebhookId) {
+        setAutoModeSettings(prev => ({ ...prev, skipDiscord: false, discordWebhookId: preset.discordWebhookId! }));
+      }
+
+      toast({
+        title: "Preset Applied",
+        description: `"${preset.name}" settings loaded`,
+      });
+    } catch (error) {
+      console.error('Failed to apply preset:', error);
+    }
+  }, [toast]);
+
   const handleSkipRenameChange = useCallback((value: boolean) => {
     setSkipRename(value);
     setAutoModeSettings(prev => ({ ...prev, skipRename: value }));
@@ -843,6 +885,8 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             onWordpressConfigChange={handleWordpressConfigChange}
             armemberPlans={armemberPlans}
             onRemoveImage={handleRemoveImage}
+            activePresetId={activePresetId || undefined}
+            onPresetSelect={handlePresetSelect}
           />
         );
       case 2:

@@ -213,3 +213,19 @@ export const discordWebhookSchema = z.object({
 export type DiscordWebhook = z.infer<typeof discordWebhookSchema>;
 export const insertDiscordWebhookSchema = discordWebhookSchema.omit({ id: true });
 export type InsertDiscordWebhook = z.infer<typeof insertDiscordWebhookSchema>;
+
+// Workflow Preset - bundles all per-character/model settings
+export const workflowPresetSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1), // Display name (e.g., "Melanie")
+  discordWebhookId: z.string().optional(), // Which Discord webhook to use
+  postTitle: z.string().optional(), // WordPress post title (e.g., "Melanie")
+  postDescription: z.string().optional(), // WordPress post description/content
+  driveSubfolderName: z.string().optional(), // Google Drive subfolder (e.g., "Melanie")
+  renamePrefix: z.string().optional(), // File rename prefix (e.g., "melanie")
+  descriptionTemplateId: z.string().optional(), // Description template to use
+});
+
+export type WorkflowPreset = z.infer<typeof workflowPresetSchema>;
+export const insertWorkflowPresetSchema = workflowPresetSchema.omit({ id: true });
+export type InsertWorkflowPreset = z.infer<typeof insertWorkflowPresetSchema>;

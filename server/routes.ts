@@ -7,7 +7,7 @@ import sharp from "sharp";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
-import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage, FolderMapping } from "@shared/schema";
+import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage, FolderMapping, WorkflowPreset } from "@shared/schema";
 import { checkDriveConnection, findOrCreateFolder, findOrCreateSubfolderById, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
 import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
 import * as discord from "./discord";
@@ -1329,6 +1329,103 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       res.json({ success: true });
     } catch (error: any) {
       console.error('Delete webhook error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Workflow Presets CRUD
+  app.get('/api/presets', async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getUserSettings();
+      res.json(settings.workflowPresets || []);
+    } catch (error: any) {
+      console.error('Get presets error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/presets', async (req: Request, res: Response) => {
+    try {
+      const { name, discordWebhookId, postTitle, postDescription, driveSubfolderName, renamePrefix, descriptionTemplateId } = req.body;
+
+      if (!name) {
+        return res.status(400).json({ message: 'Name is required' });
+      }
+
+      const settings = await storage.getUserSettings();
+      const presets = settings.workflowPresets || [];
+
+      const newPreset: WorkflowPreset = {
+        id: randomUUID(),
+        name,
+        discordWebhookId: discordWebhookId || undefined,
+        postTitle: postTitle || undefined,
+        postDescription: postDescription || undefined,
+        driveSubfolderName: driveSubfolderName || undefined,
+        renamePrefix: renamePrefix || undefined,
+        descriptionTemplateId: descriptionTemplateId || undefined,
+      };
+
+      presets.push(newPreset);
+      await storage.saveUserSettings({ ...settings, workflowPresets: presets });
+
+      res.json(newPreset);
+    } catch (error: any) {
+      console.error('Create preset error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put('/api/presets/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { name, discordWebhookId, postTitle, postDescription, driveSubfolderName, renamePrefix, descriptionTemplateId } = req.body;
+
+      const settings = await storage.getUserSettings();
+      const presets = settings.workflowPresets || [];
+
+      const index = presets.findIndex((p: WorkflowPreset) => p.id === id);
+      if (index === -1) {
+        return res.status(404).json({ message: 'Preset not found' });
+      }
+
+      presets[index] = {
+        ...presets[index],
+        name: name !== undefined ? name : presets[index].name,
+        discordWebhookId: discordWebhookId !== undefined ? discordWebhookId : presets[index].discordWebhookId,
+        postTitle: postTitle !== undefined ? postTitle : presets[index].postTitle,
+        postDescription: postDescription !== undefined ? postDescription : presets[index].postDescription,
+        driveSubfolderName: driveSubfolderName !== undefined ? driveSubfolderName : presets[index].driveSubfolderName,
+        renamePrefix: renamePrefix !== undefined ? renamePrefix : presets[index].renamePrefix,
+        descriptionTemplateId: descriptionTemplateId !== undefined ? descriptionTemplateId : presets[index].descriptionTemplateId,
+      };
+
+      await storage.saveUserSettings({ ...settings, workflowPresets: presets });
+      res.json(presets[index]);
+    } catch (error: any) {
+      console.error('Update preset error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/presets/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const settings = await storage.getUserSettings();
+      const presets = settings.workflowPresets || [];
+
+      const index = presets.findIndex((p: WorkflowPreset) => p.id === id);
+      if (index === -1) {
+        return res.status(404).json({ message: 'Preset not found' });
+      }
+
+      presets.splice(index, 1);
+      await storage.saveUserSettings({ ...settings, workflowPresets: presets });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Delete preset error:', error);
       res.status(500).json({ message: error.message });
     }
   });

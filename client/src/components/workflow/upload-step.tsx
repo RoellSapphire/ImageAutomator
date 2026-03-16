@@ -20,7 +20,7 @@ interface DriveFolder {
   name: string;
   path: string;
 }
-import type { ProcessedImage, AutoModeSettings, DescriptionTemplate, RenameConfig, EnhanceConfig, DriveConfig, WordPressConfig, ARMemberPlan, FolderMapping } from "@/lib/types";
+import type { ProcessedImage, AutoModeSettings, DescriptionTemplate, RenameConfig, EnhanceConfig, DriveConfig, WordPressConfig, ARMemberPlan, FolderMapping, WorkflowPreset } from "@/lib/types";
 
 interface CivitaiImageData {
   id: string;
@@ -53,6 +53,8 @@ interface UploadStepProps {
   onWordpressConfigChange?: (config: WordPressConfig) => void;
   armemberPlans?: ARMemberPlan[];
   onRemoveImage?: (imageId: string) => void;
+  activePresetId?: string;
+  onPresetSelect?: (presetId: string | null) => void;
 }
 
 export function UploadStep({ 
@@ -76,7 +78,9 @@ export function UploadStep({
   wordpressConfig,
   onWordpressConfigChange,
   armemberPlans = [],
-  onRemoveImage
+  onRemoveImage,
+  activePresetId,
+  onPresetSelect
 }: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -105,6 +109,18 @@ export function UploadStep({
   const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<DriveFolder | null>(null);
   
+  // Presets state
+  const [presets, setPresets] = useState<WorkflowPreset[]>([]);
+  const [showPresetForm, setShowPresetForm] = useState(false);
+  const [editingPreset, setEditingPreset] = useState<WorkflowPreset | null>(null);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [newPresetDiscordWebhookId, setNewPresetDiscordWebhookId] = useState<string | undefined>();
+  const [newPresetPostTitle, setNewPresetPostTitle] = useState('');
+  const [newPresetPostDescription, setNewPresetPostDescription] = useState('');
+  const [newPresetDriveSubfolder, setNewPresetDriveSubfolder] = useState('');
+  const [newPresetRenamePrefix, setNewPresetRenamePrefix] = useState('');
+  const [savingPreset, setSavingPreset] = useState(false);
+
   // Discord webhooks state
   const [discordWebhooks, setDiscordWebhooks] = useState<{ id: string; name: string; webhookUrl: string }[]>([]);
   const [newWebhookName, setNewWebhookName] = useState('');
@@ -359,6 +375,105 @@ export function UploadStep({
     } finally {
       setAddingWebhook(false);
     }
+  };
+
+  // Load presets on component mount
+  const loadPresets = useCallback(async () => {
+    try {
+      const response = await fetch('/api/presets');
+      if (response.ok) {
+        const data = await response.json();
+        setPresets(data);
+      }
+    } catch (error) {
+      console.error('Failed to load presets:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPresets();
+  }, [loadPresets]);
+
+  const resetPresetForm = () => {
+    setNewPresetName('');
+    setNewPresetDiscordWebhookId(undefined);
+    setNewPresetPostTitle('');
+    setNewPresetPostDescription('');
+    setNewPresetDriveSubfolder('');
+    setNewPresetRenamePrefix('');
+    setEditingPreset(null);
+  };
+
+  const handleSavePreset = async () => {
+    if (!newPresetName.trim()) return;
+    setSavingPreset(true);
+    try {
+      const presetData = {
+        name: newPresetName.trim(),
+        discordWebhookId: newPresetDiscordWebhookId || undefined,
+        postTitle: newPresetPostTitle.trim() || undefined,
+        postDescription: newPresetPostDescription.trim() || undefined,
+        driveSubfolderName: newPresetDriveSubfolder.trim() || undefined,
+        renamePrefix: newPresetRenamePrefix.trim() || undefined,
+      };
+
+      let response;
+      if (editingPreset) {
+        response = await fetch(`/api/presets/${editingPreset.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(presetData),
+        });
+      } else {
+        response = await fetch('/api/presets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(presetData),
+        });
+      }
+
+      if (response.ok) {
+        const saved = await response.json();
+        if (editingPreset) {
+          setPresets(presets.map(p => p.id === saved.id ? saved : p));
+        } else {
+          setPresets([...presets, saved]);
+        }
+        resetPresetForm();
+        setShowPresetForm(false);
+        // Auto-select the saved preset
+        if (onPresetSelect) onPresetSelect(saved.id);
+      }
+    } catch (error) {
+      console.error('Failed to save preset:', error);
+    } finally {
+      setSavingPreset(false);
+    }
+  };
+
+  const handleDeletePreset = async (presetId: string) => {
+    try {
+      const response = await fetch(`/api/presets/${presetId}`, { method: 'DELETE' });
+      if (response.ok) {
+        setPresets(presets.filter(p => p.id !== presetId));
+        if (activePresetId === presetId && onPresetSelect) {
+          onPresetSelect(null);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete preset:', error);
+    }
+  };
+
+  const handleEditPreset = (preset: WorkflowPreset) => {
+    setEditingPreset(preset);
+    setNewPresetName(preset.name);
+    setNewPresetDiscordWebhookId(preset.discordWebhookId);
+    setNewPresetPostTitle(preset.postTitle || '');
+    setNewPresetPostDescription(preset.postDescription || '');
+    setNewPresetDriveSubfolder(preset.driveSubfolderName || '');
+    setNewPresetRenamePrefix(preset.renamePrefix || '');
+    setShowPresetForm(true);
   };
 
   const loadFolders = async (parentId?: string) => {
@@ -784,6 +899,160 @@ export function UploadStep({
         </CardHeader>
         {autoModeSettings.enabled && (
           <CardContent className="space-y-4 pt-0">
+            {/* Preset Selector */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Preset</Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { resetPresetForm(); setShowPresetForm(true); }}
+                  className="h-7 text-xs"
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  New Preset
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <Select
+                  value={activePresetId || "none"}
+                  onValueChange={(value) => {
+                    if (onPresetSelect) onPresetSelect(value === "none" ? null : value);
+                  }}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select a preset..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No preset</SelectItem>
+                    {presets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {activePresetId && presets.find(p => p.id === activePresetId) && (
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={() => {
+                        const preset = presets.find(p => p.id === activePresetId);
+                        if (preset) handleEditPreset(preset);
+                      }}
+                    >
+                      <FileEdit className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 text-destructive hover:text-destructive"
+                      onClick={() => handleDeletePreset(activePresetId)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {activePresetId && presets.find(p => p.id === activePresetId) && (
+                <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2 space-y-0.5">
+                  {(() => {
+                    const preset = presets.find(p => p.id === activePresetId)!;
+                    return (
+                      <>
+                        {preset.renamePrefix && <div>Prefix: <span className="font-medium">{preset.renamePrefix}</span></div>}
+                        {preset.driveSubfolderName && <div>Drive Subfolder: <span className="font-medium">{preset.driveSubfolderName}</span></div>}
+                        {preset.postTitle && <div>Post Title: <span className="font-medium">{preset.postTitle}</span></div>}
+                        {preset.discordWebhookId && discordWebhooks.find(w => w.id === preset.discordWebhookId) && (
+                          <div>Discord: <span className="font-medium">{discordWebhooks.find(w => w.id === preset.discordWebhookId)?.name}</span></div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Preset Create/Edit Dialog */}
+            <Dialog open={showPresetForm} onOpenChange={(open) => { if (!open) { resetPresetForm(); setShowPresetForm(false); } }}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>{editingPreset ? 'Edit Preset' : 'Create Preset'}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm">Preset Name</Label>
+                    <Input
+                      placeholder="e.g., Melanie"
+                      value={newPresetName}
+                      onChange={(e) => setNewPresetName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Rename Prefix</Label>
+                    <Input
+                      placeholder="e.g., melanie"
+                      value={newPresetRenamePrefix}
+                      onChange={(e) => setNewPresetRenamePrefix(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Files renamed to: melanie_001.jpg</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm">Google Drive Subfolder</Label>
+                    <Input
+                      placeholder="e.g., Melanie"
+                      value={newPresetDriveSubfolder}
+                      onChange={(e) => setNewPresetDriveSubfolder(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Post Title</Label>
+                    <Input
+                      placeholder="e.g., Melanie"
+                      value={newPresetPostTitle}
+                      onChange={(e) => setNewPresetPostTitle(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Post Description</Label>
+                    <Input
+                      placeholder="Description for WordPress post"
+                      value={newPresetPostDescription}
+                      onChange={(e) => setNewPresetPostDescription(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Discord Webhook</Label>
+                    <Select
+                      value={newPresetDiscordWebhookId || "none"}
+                      onValueChange={(value) => setNewPresetDiscordWebhookId(value === "none" ? undefined : value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select webhook..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {discordWebhooks.map((w) => (
+                          <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { resetPresetForm(); setShowPresetForm(false); }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSavePreset} disabled={!newPresetName.trim() || savingPreset}>
+                    {savingPreset ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {editingPreset ? 'Update' : 'Create'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Label htmlFor="auto-title" className="text-sm flex-1">
