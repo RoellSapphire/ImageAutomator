@@ -11,6 +11,7 @@ import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, Driv
 import { checkDriveConnection, findOrCreateFolder, findOrCreateSubfolderById, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
 import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
 import * as discord from "./discord";
+import { getWatchedFolders, addWatchedFolder, updateWatchedFolder, removeWatchedFolder, startWatcher, stopWatcher, isWatcherRunning, getRecentEvents, resetFolder } from "./folder-watcher";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -1579,6 +1580,108 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: 'Failed to delete folder mapping' });
+    }
+  });
+
+  // === Folder Watcher Endpoints ===
+
+  app.get('/api/watcher/status', async (req: Request, res: Response) => {
+    try {
+      const folders = await getWatchedFolders();
+      res.json({
+        running: isWatcherRunning(),
+        folders,
+        recentEvents: getRecentEvents().slice(0, 20),
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to get watcher status' });
+    }
+  });
+
+  app.post('/api/watcher/start', async (req: Request, res: Response) => {
+    try {
+      await startWatcher();
+      res.json({ success: true, running: true });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to start watcher' });
+    }
+  });
+
+  app.post('/api/watcher/stop', async (req: Request, res: Response) => {
+    try {
+      stopWatcher();
+      res.json({ success: true, running: false });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to stop watcher' });
+    }
+  });
+
+  app.get('/api/watcher/events', async (req: Request, res: Response) => {
+    try {
+      res.json(getRecentEvents());
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to get events' });
+    }
+  });
+
+  app.get('/api/watched-folders', async (req: Request, res: Response) => {
+    try {
+      const folders = await getWatchedFolders();
+      res.json(folders);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to get watched folders' });
+    }
+  });
+
+  app.post('/api/watched-folders', async (req: Request, res: Response) => {
+    try {
+      const { localPath, mappingId, driveConfig, enabled, pollIntervalMs } = req.body;
+      if (!localPath) {
+        return res.status(400).json({ message: 'localPath is required' });
+      }
+      const folder = await addWatchedFolder({
+        localPath,
+        mappingId,
+        driveConfig,
+        enabled: enabled !== false,
+        pollIntervalMs: pollIntervalMs || 5000,
+      });
+      res.json(folder);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to add watched folder' });
+    }
+  });
+
+  app.put('/api/watched-folders/:id', async (req: Request, res: Response) => {
+    try {
+      const folder = await updateWatchedFolder(req.params.id, req.body);
+      if (!folder) {
+        return res.status(404).json({ message: 'Watched folder not found' });
+      }
+      res.json(folder);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to update watched folder' });
+    }
+  });
+
+  app.delete('/api/watched-folders/:id', async (req: Request, res: Response) => {
+    try {
+      const removed = await removeWatchedFolder(req.params.id);
+      if (!removed) {
+        return res.status(404).json({ message: 'Watched folder not found' });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to remove watched folder' });
+    }
+  });
+
+  app.post('/api/watched-folders/:id/reset', async (req: Request, res: Response) => {
+    try {
+      resetFolder(req.params.id);
+      res.json({ success: true, message: 'Folder reset - existing files will be re-processed on next scan' });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to reset folder' });
     }
   });
 

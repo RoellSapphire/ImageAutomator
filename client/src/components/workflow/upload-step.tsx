@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles, ArrowUpDown, X, MessageCircle } from "lucide-react";
+import { Upload, FileArchive, Images, CheckCircle, AlertCircle, Loader2, Zap, FileEdit, ImageIcon, FolderOpen, Globe, Settings, Home, ArrowLeft, ChevronRight, Download, RefreshCw, Check, Sparkles, ArrowUpDown, X, MessageCircle, Eye, EyeOff, Play, Square, Trash2, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DriveFolder {
@@ -122,6 +122,131 @@ export function UploadStep({
   const [newMappingSubfolderName, setNewMappingSubfolderName] = useState('');
   const [newMappingWebhookId, setNewMappingWebhookId] = useState<string | undefined>();
   const [savingMapping, setSavingMapping] = useState(false);
+
+  // Folder watcher state
+  interface WatchedFolder {
+    id: string;
+    localPath: string;
+    mappingId?: string;
+    driveConfig?: { folderId?: string; folderPath?: string; createSubfolder?: boolean; subfolderName?: string };
+    enabled: boolean;
+    pollIntervalMs: number;
+  }
+  interface WatcherEvent {
+    type: string;
+    folderId: string;
+    folderPath: string;
+    fileName?: string;
+    message: string;
+    timestamp: string;
+  }
+  const [watchedFolders, setWatchedFolders] = useState<WatchedFolder[]>([]);
+  const [watcherRunning, setWatcherRunning] = useState(false);
+  const [watcherEvents, setWatcherEvents] = useState<WatcherEvent[]>([]);
+  const [showWatcherForm, setShowWatcherForm] = useState(false);
+  const [newWatchPath, setNewWatchPath] = useState('');
+  const [newWatchMappingId, setNewWatchMappingId] = useState<string | undefined>();
+  const [newWatchDrivePath, setNewWatchDrivePath] = useState('');
+  const [savingWatcher, setSavingWatcher] = useState(false);
+
+  const loadWatcherStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/watcher/status');
+      if (response.ok) {
+        const data = await response.json();
+        setWatchedFolders(data.folders || []);
+        setWatcherRunning(data.running || false);
+        setWatcherEvents(data.recentEvents || []);
+      }
+    } catch (error) {
+      console.error('Failed to load watcher status:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWatcherStatus();
+  }, [loadWatcherStatus]);
+
+  // Poll for watcher events when running
+  useEffect(() => {
+    if (!watcherRunning) return;
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/watcher/events');
+        if (response.ok) {
+          const events = await response.json();
+          setWatcherEvents(events.slice(0, 20));
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [watcherRunning]);
+
+  const handleToggleWatcher = async () => {
+    try {
+      const endpoint = watcherRunning ? '/api/watcher/stop' : '/api/watcher/start';
+      const response = await fetch(endpoint, { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        setWatcherRunning(data.running);
+      }
+    } catch (error) {
+      console.error('Failed to toggle watcher:', error);
+    }
+  };
+
+  const handleAddWatchedFolder = async () => {
+    if (!newWatchPath.trim()) return;
+    setSavingWatcher(true);
+    try {
+      const body: any = {
+        localPath: newWatchPath.trim(),
+        enabled: true,
+        pollIntervalMs: 5000,
+      };
+      if (newWatchMappingId) {
+        body.mappingId = newWatchMappingId;
+      } else if (newWatchDrivePath.trim()) {
+        body.driveConfig = { folderPath: newWatchDrivePath.trim() };
+      }
+      const response = await fetch('/api/watched-folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        const folder = await response.json();
+        setWatchedFolders([...watchedFolders, folder]);
+        setNewWatchPath('');
+        setNewWatchMappingId(undefined);
+        setNewWatchDrivePath('');
+        setShowWatcherForm(false);
+      }
+    } catch (error) {
+      console.error('Failed to add watched folder:', error);
+    } finally {
+      setSavingWatcher(false);
+    }
+  };
+
+  const handleDeleteWatchedFolder = async (id: string) => {
+    try {
+      const response = await fetch(`/api/watched-folders/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setWatchedFolders(watchedFolders.filter(f => f.id !== id));
+      }
+    } catch (error) {
+      console.error('Failed to delete watched folder:', error);
+    }
+  };
+
+  const handleResetWatchedFolder = async (id: string) => {
+    try {
+      await fetch(`/api/watched-folders/${id}/reset`, { method: 'POST' });
+    } catch (error) {
+      console.error('Failed to reset watched folder:', error);
+    }
+  };
 
   // Load folder mappings on mount
   const loadFolderMappings = useCallback(async () => {
@@ -1384,6 +1509,180 @@ export function UploadStep({
                       <p className="text-xs text-muted-foreground">
                         When enabled, uploads from matching folders will auto-route to their linked Drive folder, Discord webhook, etc.
                       </p>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="folder-watcher" className="border rounded-lg px-3 mt-2">
+                  <AccordionTrigger className="py-3 hover:no-underline">
+                    <div className="flex items-center gap-2">
+                      <Eye className="h-4 w-4" />
+                      <span className="text-sm font-medium">Folder Watcher</span>
+                      <Badge variant={watcherRunning ? "default" : "secondary"} className="ml-2 text-xs">
+                        {watcherRunning ? "Running" : "Stopped"}
+                      </Badge>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-3 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Watch local folders for new images. When a new image appears, it's automatically uploaded to the linked Google Drive folder.
+                      </p>
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-medium">Watcher</Label>
+                        <Button
+                          size="sm"
+                          variant={watcherRunning ? "destructive" : "default"}
+                          onClick={handleToggleWatcher}
+                          className="gap-1"
+                        >
+                          {watcherRunning ? (
+                            <><Square className="h-3 w-3" /> Stop</>
+                          ) : (
+                            <><Play className="h-3 w-3" /> Start</>
+                          )}
+                        </Button>
+                      </div>
+
+                      {watchedFolders.length > 0 && (
+                        <div className="space-y-2">
+                          {watchedFolders.map((wf) => {
+                            const linkedMapping = folderMappings.find(m => m.id === wf.mappingId);
+                            return (
+                              <div key={wf.id} className="flex items-center justify-between gap-2 p-2 border rounded-md bg-muted/30">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{wf.localPath}</p>
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {linkedMapping
+                                      ? `Mapping: ${linkedMapping.name} → ${linkedMapping.driveConfig?.folderPath || '/'}`
+                                      : wf.driveConfig?.folderPath
+                                        ? `Drive: ${wf.driveConfig.folderPath}`
+                                        : 'No output configured'}
+                                  </p>
+                                </div>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => handleResetWatchedFolder(wf.id)}
+                                    title="Reset - re-process existing files"
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                    onClick={() => handleDeleteWatchedFolder(wf.id)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {showWatcherForm ? (
+                        <div className="space-y-3 p-3 border rounded-md">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Local Folder Path</Label>
+                            <Input
+                              value={newWatchPath}
+                              onChange={(e) => setNewWatchPath(e.target.value)}
+                              placeholder="e.g., C:\Users\Mike\output\nsfw"
+                              className="h-8 text-sm"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Full path to the folder you want to watch for new images
+                            </p>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Link to Folder Mapping (optional)</Label>
+                            <Select
+                              value={newWatchMappingId || "none"}
+                              onValueChange={(v) => {
+                                setNewWatchMappingId(v === "none" ? undefined : v);
+                                if (v !== "none") setNewWatchDrivePath('');
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="No mapping" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No mapping - set Drive path below</SelectItem>
+                                {folderMappings.map((m) => (
+                                  <SelectItem key={m.id} value={m.id}>
+                                    {m.name} → {m.driveConfig?.folderPath || '/'}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {!newWatchMappingId && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Google Drive Output Path</Label>
+                              <Input
+                                value={newWatchDrivePath}
+                                onChange={(e) => setNewWatchDrivePath(e.target.value)}
+                                placeholder="/Posted/NSFW"
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={handleAddWatchedFolder}
+                              disabled={!newWatchPath.trim() || savingWatcher}
+                            >
+                              {savingWatcher ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Watch Folder"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setShowWatcherForm(false)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowWatcherForm(true)}
+                          className="w-full"
+                        >
+                          Add Watch Folder
+                        </Button>
+                      )}
+
+                      {watcherRunning && watcherEvents.length > 0 && (
+                        <div className="space-y-1 pt-2 border-t">
+                          <Label className="text-xs font-medium">Recent Activity</Label>
+                          <div className="max-h-32 overflow-y-auto space-y-1">
+                            {watcherEvents.slice(0, 10).map((event, i) => (
+                              <div key={i} className="flex items-start gap-2 text-xs">
+                                <span className={cn(
+                                  "mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0",
+                                  event.type === 'complete' && "bg-green-500",
+                                  event.type === 'error' && "bg-red-500",
+                                  event.type === 'exported' && "bg-blue-500",
+                                  (event.type === 'file_detected' || event.type === 'processing') && "bg-yellow-500",
+                                )} />
+                                <span className="text-muted-foreground truncate">{event.message}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </AccordionContent>
                 </AccordionItem>

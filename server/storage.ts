@@ -12,6 +12,7 @@ export interface UserSettings {
   descriptionTemplates?: DescriptionTemplate[];
   discordWebhooks?: DiscordWebhook[];
   folderMappings?: FolderMapping[];
+  watchedFolders?: any[];
 }
 
 export interface IStorage {
