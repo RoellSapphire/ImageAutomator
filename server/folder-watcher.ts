@@ -16,6 +16,9 @@ const THUMBNAILS_DIR = path.join(process.cwd(), 'thumbnails');
 const processedFiles = new Set<string>();
 // Track files being written to (wait for them to stabilize)
 const pendingFiles = new Map<string, { size: number; lastChanged: number }>();
+// Processing queue - prevents concurrent uploads that overwhelm Drive API
+const processingQueue: Array<{ filePath: string; watchedFolder: WatchedFolder }> = [];
+let isProcessingQueue = false;
 
 interface WatchedFolder {
   id: string;
@@ -97,6 +100,44 @@ function isFileStable(filePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+async function processQueue() {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+
+  while (processingQueue.length > 0) {
+    const item = processingQueue.shift()!;
+    try {
+      await withTimeout(
+        processNewFile(item.filePath, item.watchedFolder),
+        120000, // 2 minute timeout per file
+        `Processing ${path.basename(item.filePath)}`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`[FolderWatcher] Queue processing failed for ${item.filePath}:`, msg);
+      emitEvent({
+        type: 'error',
+        folderId: item.watchedFolder.id,
+        folderPath: item.watchedFolder.localPath,
+        fileName: path.basename(item.filePath),
+        message: `Failed: ${msg}`,
+      });
+    }
+  }
+
+  isProcessingQueue = false;
 }
 
 async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
@@ -280,9 +321,14 @@ function pollFolder(watchedFolder: WatchedFolder) {
       // Mark as processed immediately to avoid double-processing
       processedFiles.add(fileKey);
 
-      // Process async
-      processNewFile(filePath, watchedFolder).catch(err => {
-        console.error(`[FolderWatcher] Failed to process ${filePath}:`, err);
+      // Add to queue for sequential processing
+      processingQueue.push({ filePath, watchedFolder });
+    }
+
+    // Kick off queue processing if items were added
+    if (processingQueue.length > 0) {
+      processQueue().catch(err => {
+        console.error('[FolderWatcher] Queue processing error:', err);
       });
     }
   } catch (error) {
@@ -400,6 +446,8 @@ export function stopWatcher(): void {
   Array.from(pollTimers.keys()).forEach(id => stopPolling(id));
   processedFiles.clear();
   pendingFiles.clear();
+  processingQueue.length = 0;
+  isProcessingQueue = false;
   console.log('[FolderWatcher] Stopped all watchers');
 }
 
