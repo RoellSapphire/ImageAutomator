@@ -7,10 +7,9 @@ import sharp from "sharp";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
-import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage } from "@shared/schema";
+import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage, FolderMapping } from "@shared/schema";
 import { checkDriveConnection, findOrCreateFolder, findOrCreateSubfolderById, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
 import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
-import * as deviantart from "./deviantart";
 import * as discord from "./discord";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
@@ -1519,317 +1518,67 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
     }
   });
 
-  // DeviantArt OAuth routes
-  app.get('/api/deviantart/auth-url', (req: Request, res: Response) => {
-    const clientId = process.env.DEVIANTART_CLIENT_ID;
-    if (!clientId) {
-      return res.status(400).json({ message: 'DeviantArt client ID not configured' });
-    }
-    
-    // Use x-forwarded-proto for correct protocol behind reverse proxy
-    const protocol = req.get('x-forwarded-proto') || req.protocol;
-    const redirectUri = `${protocol}://${req.get('host')}/api/deviantart/callback`;
-    const state = randomUUID();
-    const authUrl = deviantart.getAuthUrl(clientId, redirectUri, state);
-    
-    res.json({ authUrl, state });
-  });
-
-  app.get('/api/deviantart/callback', async (req: Request, res: Response) => {
-    const { code, state } = req.query;
-    
-    if (!code || typeof code !== 'string') {
-      return res.redirect('/?error=deviantart_auth_failed');
-    }
-
-    const clientId = process.env.DEVIANTART_CLIENT_ID;
-    const clientSecret = process.env.DEVIANTART_CLIENT_SECRET;
-    
-    if (!clientId || !clientSecret) {
-      return res.redirect('/?error=deviantart_not_configured');
-    }
-
+  // Folder Mappings CRUD
+  app.get('/api/folder-mappings', async (req: Request, res: Response) => {
     try {
-      // Use x-forwarded-proto for correct protocol behind reverse proxy
-      const protocol = req.get('x-forwarded-proto') || req.protocol;
-      const redirectUri = `${protocol}://${req.get('host')}/api/deviantart/callback`;
-      const tokens = await deviantart.exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
-      
-      // Store tokens in settings
       const settings = await storage.getUserSettings();
-      settings.deviantartTokens = {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        expiresAt: Date.now() + tokens.expires_in * 1000,
-      };
-      await storage.saveUserSettings(settings);
-      
-      // Return HTML that closes the popup and signals success
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>DeviantArt Connected</title></head>
-        <body>
-          <script>
-            if (window.opener) {
-              window.opener.postMessage('deviantart-auth-success', '*');
-            }
-            window.close();
-          </script>
-          <p>DeviantArt connected successfully. You can close this window.</p>
-        </body>
-        </html>
-      `);
+      res.json(settings.folderMappings || []);
     } catch (error) {
-      console.error('DeviantArt OAuth error:', error);
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>DeviantArt Error</title></head>
-        <body>
-          <script>
-            if (window.opener) {
-              window.opener.postMessage('deviantart-auth-failed', '*');
-            }
-            window.close();
-          </script>
-          <p>DeviantArt authentication failed. You can close this window.</p>
-        </body>
-        </html>
-      `);
+      res.status(500).json({ message: 'Failed to load folder mappings' });
     }
   });
 
-  app.get('/api/deviantart/status', async (req: Request, res: Response) => {
-    const settings = await storage.getUserSettings();
-    const tokens = settings.deviantartTokens;
-    
-    if (!tokens || !tokens.accessToken) {
-      return res.json({ connected: false });
-    }
-    
-    // Check if token is expired
-    if (tokens.expiresAt && Date.now() > tokens.expiresAt) {
-      // Try to refresh
-      const clientId = process.env.DEVIANTART_CLIENT_ID;
-      const clientSecret = process.env.DEVIANTART_CLIENT_SECRET;
-      
-      if (clientId && clientSecret && tokens.refreshToken) {
-        try {
-          const newTokens = await deviantart.refreshAccessToken(tokens.refreshToken, clientId, clientSecret);
-          settings.deviantartTokens = {
-            accessToken: newTokens.access_token,
-            refreshToken: newTokens.refresh_token,
-            expiresAt: Date.now() + newTokens.expires_in * 1000,
-          };
-          await storage.saveUserSettings(settings);
-          return res.json({ connected: true });
-        } catch (error) {
-          console.error('Failed to refresh DeviantArt token:', error);
-          return res.json({ connected: false, error: 'Token expired' });
-        }
-      }
-      return res.json({ connected: false, error: 'Token expired' });
-    }
-    
-    res.json({ connected: true });
-  });
-
-  app.post('/api/deviantart/disconnect', async (req: Request, res: Response) => {
-    const settings = await storage.getUserSettings();
-    delete settings.deviantartTokens;
-    await storage.saveUserSettings(settings);
-    res.json({ success: true });
-  });
-
-  // DeviantArt scheduled uploads
-  app.get('/api/deviantart/scheduled', async (req: Request, res: Response) => {
-    const uploads = await deviantart.getScheduledUploads();
-    res.json({ 
-      uploads,
-      schedulerRunning: deviantart.isSchedulerRunning(),
-    });
-  });
-
-  app.post('/api/deviantart/schedule', async (req: Request, res: Response) => {
-    const { imageId, title, description, category, isMature, scheduledTime } = req.body;
-    
-    if (!imageId) {
-      return res.status(400).json({ message: 'Image ID required' });
-    }
-    
-    // Look up the image to get the file path for persistence across restarts
-    const image = await storage.findImageById(imageId);
-    if (!image) {
-      return res.status(404).json({ message: 'Image not found' });
-    }
-    
-    const filePath = image.processedPath || image.originalPath;
-    
-    const upload = await deviantart.addScheduledUpload({
-      imageUrl: imageId,
-      filePath: filePath, // Store actual file path for persistence
-      title: title || 'Untitled',
-      description: description || '',
-      category: category || 'digitalart/drawings',
-      isMature: isMature || false,
-      scheduledTime: new Date(scheduledTime || Date.now()).toISOString(),
-    });
-    
-    res.json({ success: true, upload });
-  });
-
-  app.delete('/api/deviantart/scheduled/:id', async (req: Request, res: Response) => {
-    const success = await deviantart.removeScheduledUpload(req.params.id);
-    res.json({ success });
-  });
-
-  app.post('/api/deviantart/scheduler/start', async (req: Request, res: Response) => {
-    const { intervalMinutes } = req.body;
-    const settings = await storage.getUserSettings();
-    const tokens = settings.deviantartTokens;
-    
-    if (!tokens?.accessToken) {
-      return res.status(400).json({ message: 'Not connected to DeviantArt' });
-    }
-    
-    deviantart.startScheduler(tokens.accessToken, intervalMinutes || 60);
-    res.json({ success: true, message: 'Scheduler started' });
-  });
-
-  app.post('/api/deviantart/scheduler/stop', (req: Request, res: Response) => {
-    deviantart.stopScheduler();
-    res.json({ success: true, message: 'Scheduler stopped' });
-  });
-
-  app.post('/api/deviantart/upload', async (req: Request, res: Response) => {
-    const { imageId, title, description, category, isMature, workflowId } = req.body;
-    
-    let settings = await storage.getUserSettings();
-    let tokens = settings.deviantartTokens;
-    
-    if (!tokens?.accessToken) {
-      return res.status(400).json({ message: 'Not connected to DeviantArt' });
-    }
-    
-    if (!imageId) {
-      return res.status(400).json({ message: 'Image ID is required' });
-    }
-    
+  app.post('/api/folder-mappings', async (req: Request, res: Response) => {
     try {
-      // Check if token is expired and refresh if needed
-      if (tokens.expiresAt && tokens.expiresAt < Date.now() && tokens.refreshToken) {
-        console.log('DeviantArt token expired, refreshing...');
-        const clientId = process.env.DEVIANTART_CLIENT_ID;
-        const clientSecret = process.env.DEVIANTART_CLIENT_SECRET;
-        
-        if (clientId && clientSecret) {
-          try {
-            const newTokens = await deviantart.refreshAccessToken(
-              tokens.refreshToken,
-              clientId,
-              clientSecret
-            );
-            tokens = {
-              accessToken: newTokens.access_token,
-              refreshToken: newTokens.refresh_token,
-              expiresAt: Date.now() + newTokens.expires_in * 1000,
-            };
-            settings.deviantartTokens = tokens;
-            await storage.saveUserSettings(settings);
-            console.log('DeviantArt token refreshed successfully');
-          } catch (refreshError) {
-            console.error('Failed to refresh DeviantArt token:', refreshError);
-            return res.status(401).json({ message: 'DeviantArt session expired. Please reconnect.' });
-          }
-        }
+      const { name, importFolder, driveConfig, wordpressConfig, discordWebhookId } = req.body;
+      if (!name || !importFolder) {
+        return res.status(400).json({ message: 'Name and import folder are required' });
       }
-      
-      // Find the image in storage
-      const image = await storage.findImageById(imageId);
-      
-      if (!image) {
-        console.log('Image not found in storage:', imageId);
-        return res.status(404).json({ message: 'Image not found. Please re-upload the images.' });
+      const settings = await storage.getUserSettings();
+      const mappings = settings.folderMappings || [];
+      const newMapping = {
+        id: randomUUID(),
+        name,
+        importFolder,
+        driveConfig: driveConfig || {},
+        wordpressConfig,
+        discordWebhookId,
+      };
+      mappings.push(newMapping);
+      settings.folderMappings = mappings;
+      await storage.saveUserSettings(settings);
+      res.json(newMapping);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to create folder mapping' });
+    }
+  });
+
+  app.put('/api/folder-mappings/:id', async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getUserSettings();
+      const mappings = settings.folderMappings || [];
+      const index = mappings.findIndex(m => m.id === req.params.id);
+      if (index === -1) {
+        return res.status(404).json({ message: 'Folder mapping not found' });
       }
-      
-      // Read file from disk - use processedPath if available, otherwise originalPath
-      const filePath = image.processedPath || image.originalPath;
-      console.log('Reading image from:', filePath);
-      
-      const fs = await import('fs/promises');
-      const imageBuffer = await fs.readFile(filePath);
-      
-      console.log('Uploading to DeviantArt:', { title, filename: image.newName || image.originalName, size: imageBuffer.length });
-      
-      try {
-        const result = await deviantart.uploadAndPublish(
-          tokens.accessToken,
-          imageBuffer,
-          image.newName || image.originalName || 'image.png',
-          title || image.newName || image.originalName || 'Untitled',
-          description || '',
-          category || 'digitalart/drawings',
-          isMature || false
-        );
-        
-        console.log('DeviantArt upload success:', result.publishResponse.url);
-        
-        return res.json({ 
-          success: true, 
-          url: result.publishResponse.url,
-          deviationId: result.publishResponse.deviationid,
-        });
-      } catch (uploadError: any) {
-        // If the error suggests token issues, try refreshing and retrying once
-        if (uploadError.message?.includes('invalid_token') || uploadError.message?.includes('unauthorized')) {
-          console.log('DeviantArt token might be expired, attempting refresh...');
-          const clientId = process.env.DEVIANTART_CLIENT_ID;
-          const clientSecret = process.env.DEVIANTART_CLIENT_SECRET;
-          
-          if (clientId && clientSecret && tokens.refreshToken) {
-            try {
-              const newTokens = await deviantart.refreshAccessToken(
-                tokens.refreshToken,
-                clientId,
-                clientSecret
-              );
-              tokens = {
-                accessToken: newTokens.access_token,
-                refreshToken: newTokens.refresh_token,
-                expiresAt: Date.now() + newTokens.expires_in * 1000,
-              };
-              settings.deviantartTokens = tokens;
-              await storage.saveUserSettings(settings);
-              
-              // Retry upload with new token
-              const retryResult = await deviantart.uploadAndPublish(
-                tokens.accessToken,
-                imageBuffer,
-                image.newName || image.originalName || 'image.png',
-                title || image.newName || image.originalName || 'Untitled',
-                description || '',
-                category || 'digitalart/drawings',
-                isMature || false
-              );
-              
-              console.log('DeviantArt upload success after token refresh:', retryResult.publishResponse.url);
-              
-              return res.json({ 
-                success: true, 
-                url: retryResult.publishResponse.url,
-                deviationId: retryResult.publishResponse.deviationid,
-              });
-            } catch (refreshError) {
-              console.error('Token refresh failed:', refreshError);
-            }
-          }
-        }
-        throw uploadError;
-      }
-    } catch (error: any) {
-      console.error('DeviantArt upload error:', error.message || error);
-      res.status(500).json({ message: error.message || 'Upload failed' });
+      mappings[index] = { ...mappings[index], ...req.body, id: req.params.id };
+      settings.folderMappings = mappings;
+      await storage.saveUserSettings(settings);
+      res.json(mappings[index]);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to update folder mapping' });
+    }
+  });
+
+  app.delete('/api/folder-mappings/:id', async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getUserSettings();
+      const mappings = settings.folderMappings || [];
+      settings.folderMappings = mappings.filter(m => m.id !== req.params.id);
+      await storage.saveUserSettings(settings);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to delete folder mapping' });
     }
   });
 

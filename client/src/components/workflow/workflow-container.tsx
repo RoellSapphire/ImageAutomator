@@ -57,8 +57,8 @@ const DEFAULT_AUTO_MODE: AutoModeSettings = {
   skipEnhance: false,
   skipExport: false,
   skipPublish: false,
-  skipDeviantArt: false,
   skipDiscord: true,
+  useFolderMappings: false,
   discordWebhookId: undefined,
   deleteOriginalsAfterProcess: false,
 };
@@ -182,7 +182,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           if (merged.skipEnhance) setSkipEnhance(true);
           if (merged.skipExport) setSkipExport(true);
           if (merged.skipPublish) setSkipWordpress(true);
-          if (merged.skipDeviantArt) setSkipDeviantart(true);
+          // skipDeviantArt removed - no longer needed
         }
         if (saved.descriptionTemplates?.length) setDescriptionTemplates(saved.descriptionTemplates);
       }
@@ -200,7 +200,6 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [skipEnhance, setSkipEnhance] = useState(false);
   const [skipExport, setSkipExport] = useState(false);
   const [skipWordpress, setSkipWordpress] = useState(false);
-  const [skipDeviantart, setSkipDeviantart] = useState(false);
 
   useEffect(() => {
     if (settingsLoaded) {
@@ -240,17 +239,60 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const runAutoMode = useCallback(async (wfId: string, uploadedImages: ProcessedImage[]) => {
     console.log('[AutoMode] Starting auto mode for workflow:', wfId);
     setIsAutoRunning(true);
-    
+
     try {
+      // Check for folder mapping match
+      let activeDriveConfig = driveConfig;
+      let activeDiscordWebhookId = autoModeSettings.discordWebhookId;
+
+      if (autoModeSettings.useFolderMappings) {
+        try {
+          const mappingsResponse = await fetch('/api/folder-mappings');
+          if (mappingsResponse.ok) {
+            const mappings = await mappingsResponse.json();
+            // Try to match based on workflow ZIP name or folder name
+            const workflowResponse = await fetch(`/api/workflow/${wfId}`);
+            if (workflowResponse.ok) {
+              const workflowData = await workflowResponse.json();
+              const uploadName = (workflowData.uploadedZipName || '').toLowerCase();
+
+              const matchedMapping = mappings.find((m: any) => {
+                const importFolder = m.importFolder.toLowerCase();
+                return uploadName.includes(importFolder) ||
+                       uploadName === importFolder ||
+                       uploadName.startsWith(importFolder + '.') ||
+                       uploadName.startsWith(importFolder + '/');
+              });
+
+              if (matchedMapping) {
+                console.log('[AutoMode] Matched folder mapping:', matchedMapping.name);
+                if (matchedMapping.driveConfig) {
+                  activeDriveConfig = matchedMapping.driveConfig;
+                }
+                if (matchedMapping.discordWebhookId) {
+                  activeDiscordWebhookId = matchedMapping.discordWebhookId;
+                }
+                toast({
+                  title: "Folder Mapping Matched",
+                  description: `Using "${matchedMapping.name}" mapping`,
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[AutoMode] Failed to check folder mappings:', error);
+        }
+      }
+
       console.log('[AutoMode] Moving to step 2 (Rename)');
       onStepChange(2);
       onStepComplete(2);
       await new Promise(r => setTimeout(r, 300));
-      
+
       console.log('[AutoMode] Moving to step 3 (Enhance)');
       onStepChange(3);
       await new Promise(r => setTimeout(r, 300));
-      
+
       console.log('[AutoMode] Processing images...');
       const processResponse = await fetch('/api/process', {
         method: 'POST',
@@ -264,21 +306,21 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           deleteOriginalsAfterProcess: autoModeSettings.deleteOriginalsAfterProcess,
         }),
       });
-      
+
       const processData = await processResponse.json();
       if (!processResponse.ok) {
         throw new Error(processData.message || 'Processing failed');
       }
       setImages(processData.images);
       onStepComplete(3);
-      
+
       onStepChange(4);
       await new Promise(r => setTimeout(r, 300));
-      
+
       if (!autoModeSettings.skipExport) {
         const driveStatusResponse = await fetch('/api/drive/status');
         const driveStatus = await driveStatusResponse.json();
-        
+
         if (driveStatus.connected) {
           setIsDriveConnected(true);
           const exportResponse = await fetch('/api/drive/export', {
@@ -286,10 +328,10 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               workflowId: wfId,
-              driveConfig,
+              driveConfig: activeDriveConfig,
             }),
           });
-          
+
           const exportData = await exportResponse.json();
           if (!exportResponse.ok) {
             toast({
@@ -310,15 +352,16 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
           description: "Skipped per auto mode settings",
         });
       }
-      
+
       // Discord posting
-      if (!autoModeSettings.skipDiscord && autoModeSettings.discordWebhookId) {
+      const effectiveWebhookId = activeDiscordWebhookId;
+      if (!autoModeSettings.skipDiscord && effectiveWebhookId) {
         try {
           // Fetch webhook URL from saved webhooks
           const webhooksResponse = await fetch('/api/discord/webhooks');
           const webhooks = await webhooksResponse.json();
-          const webhook = webhooks.find((w: any) => w.id === autoModeSettings.discordWebhookId);
-          
+          const webhook = webhooks.find((w: any) => w.id === effectiveWebhookId);
+
           if (webhook) {
             const discordResponse = await fetch('/api/discord/webhook', {
               method: 'POST',
@@ -328,7 +371,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
                 workflowId: wfId,
               }),
             });
-            
+
             const discordData = await discordResponse.json();
             if (discordResponse.ok) {
               toast({
@@ -541,10 +584,6 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
     setAutoModeSettings(prev => ({ ...prev, skipPublish: value }));
   }, []);
 
-  const handleSkipDeviantartChange = useCallback((value: boolean) => {
-    setSkipDeviantart(value);
-    setAutoModeSettings(prev => ({ ...prev, skipDeviantArt: value }));
-  }, []);
 
   const handleRestartFlow = useCallback(() => {
     setWorkflowId(null);
@@ -855,8 +894,6 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             onClearPublishedUrl={() => setPublishedPostUrl(null)}
             skipWordpress={skipWordpress}
             onSkipWordpressChange={handleSkipWordpressChange}
-            skipDeviantart={skipDeviantart}
-            onSkipDeviantartChange={handleSkipDeviantartChange}
           />
         );
       default:

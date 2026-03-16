@@ -20,7 +20,7 @@ interface DriveFolder {
   name: string;
   path: string;
 }
-import type { ProcessedImage, AutoModeSettings, DescriptionTemplate, RenameConfig, EnhanceConfig, DriveConfig, WordPressConfig, ARMemberPlan } from "@/lib/types";
+import type { ProcessedImage, AutoModeSettings, DescriptionTemplate, RenameConfig, EnhanceConfig, DriveConfig, WordPressConfig, ARMemberPlan, FolderMapping } from "@/lib/types";
 
 interface CivitaiImageData {
   id: string;
@@ -110,7 +110,85 @@ export function UploadStep({
   const [newWebhookName, setNewWebhookName] = useState('');
   const [newWebhookUrl, setNewWebhookUrl] = useState('');
   const [addingWebhook, setAddingWebhook] = useState(false);
-  
+
+  // Folder mappings state
+  const [folderMappings, setFolderMappings] = useState<FolderMapping[]>([]);
+  const [showMappingForm, setShowMappingForm] = useState(false);
+  const [newMappingName, setNewMappingName] = useState('');
+  const [newMappingImportFolder, setNewMappingImportFolder] = useState('');
+  const [newMappingDrivePath, setNewMappingDrivePath] = useState('');
+  const [newMappingDriveFolderId, setNewMappingDriveFolderId] = useState<string | undefined>();
+  const [newMappingCreateSubfolder, setNewMappingCreateSubfolder] = useState(false);
+  const [newMappingSubfolderName, setNewMappingSubfolderName] = useState('');
+  const [newMappingWebhookId, setNewMappingWebhookId] = useState<string | undefined>();
+  const [savingMapping, setSavingMapping] = useState(false);
+
+  // Load folder mappings on mount
+  const loadFolderMappings = useCallback(async () => {
+    try {
+      const response = await fetch('/api/folder-mappings');
+      if (response.ok) {
+        const mappings = await response.json();
+        setFolderMappings(mappings);
+      }
+    } catch (error) {
+      console.error('Failed to load folder mappings:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFolderMappings();
+  }, [loadFolderMappings]);
+
+  const handleAddMapping = async () => {
+    if (!newMappingName.trim() || !newMappingImportFolder.trim()) return;
+    setSavingMapping(true);
+    try {
+      const response = await fetch('/api/folder-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newMappingName.trim(),
+          importFolder: newMappingImportFolder.trim(),
+          driveConfig: {
+            folderPath: newMappingDrivePath || '/',
+            folderId: newMappingDriveFolderId,
+            createSubfolder: newMappingCreateSubfolder,
+            subfolderName: newMappingSubfolderName || undefined,
+          },
+          discordWebhookId: newMappingWebhookId,
+        }),
+      });
+      if (response.ok) {
+        const mapping = await response.json();
+        setFolderMappings([...folderMappings, mapping]);
+        setNewMappingName('');
+        setNewMappingImportFolder('');
+        setNewMappingDrivePath('');
+        setNewMappingDriveFolderId(undefined);
+        setNewMappingCreateSubfolder(false);
+        setNewMappingSubfolderName('');
+        setNewMappingWebhookId(undefined);
+        setShowMappingForm(false);
+      }
+    } catch (error) {
+      console.error('Failed to add folder mapping:', error);
+    } finally {
+      setSavingMapping(false);
+    }
+  };
+
+  const handleDeleteMapping = async (id: string) => {
+    try {
+      const response = await fetch(`/api/folder-mappings/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setFolderMappings(folderMappings.filter(m => m.id !== id));
+      }
+    } catch (error) {
+      console.error('Failed to delete folder mapping:', error);
+    }
+  };
+
   // Load discord webhooks on mount
   const loadDiscordWebhooks = useCallback(async () => {
     try {
@@ -633,15 +711,6 @@ export function UploadStep({
                 />
               </div>
               <div className="flex items-center gap-2">
-                <Label htmlFor="enable-deviantart" className="text-sm">DeviantArt</Label>
-                <Switch
-                  id="enable-deviantart"
-                  checked={!autoModeSettings.skipDeviantArt}
-                  onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, skipDeviantArt: !enabled })}
-                  data-testid="switch-enable-deviantart"
-                />
-              </div>
-              <div className="flex items-center gap-2">
                 <Label htmlFor="enable-discord" className="text-sm">Discord</Label>
                 <Switch
                   id="enable-discord"
@@ -1152,6 +1221,173 @@ export function UploadStep({
                     </AccordionContent>
                   </AccordionItem>
                 )}
+                <AccordionItem value="folder-mappings" className="border rounded-lg px-3 mt-2">
+                  <AccordionTrigger className="py-3 hover:no-underline">
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="h-4 w-4" />
+                      <span className="text-sm font-medium">Folder Mappings</span>
+                      <Badge variant="secondary" className="ml-2 text-xs">
+                        {folderMappings.length} mappings
+                      </Badge>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-3 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Link import folder names to Google Drive output folders. When a file is uploaded from a matching folder, it auto-routes to the linked Drive folder.
+                      </p>
+
+                      {folderMappings.length > 0 && (
+                        <div className="space-y-2">
+                          {folderMappings.map((mapping) => (
+                            <div key={mapping.id} className="flex items-center justify-between gap-2 p-2 border rounded-md bg-muted/30">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">{mapping.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {mapping.importFolder} → {mapping.driveConfig?.folderPath || '/'}
+                                  {mapping.driveConfig?.createSubfolder && mapping.driveConfig?.subfolderName && `/${mapping.driveConfig.subfolderName}`}
+                                </p>
+                                {mapping.discordWebhookId && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Discord: {discordWebhooks.find(w => w.id === mapping.discordWebhookId)?.name || 'Unknown'}
+                                  </p>
+                                )}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                onClick={() => handleDeleteMapping(mapping.id)}
+                                data-testid={`button-delete-mapping-${mapping.id}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {showMappingForm ? (
+                        <div className="space-y-3 p-3 border rounded-md">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Display Name</Label>
+                              <Input
+                                value={newMappingName}
+                                onChange={(e) => setNewMappingName(e.target.value)}
+                                placeholder="e.g., NSFW, SFW"
+                                className="h-8 text-sm"
+                                data-testid="input-mapping-name"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Import Folder Name</Label>
+                              <Input
+                                value={newMappingImportFolder}
+                                onChange={(e) => setNewMappingImportFolder(e.target.value)}
+                                placeholder="e.g., nsfw"
+                                className="h-8 text-sm"
+                                data-testid="input-mapping-import-folder"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Google Drive Output Folder</Label>
+                            <Input
+                              value={newMappingDrivePath}
+                              onChange={(e) => {
+                                setNewMappingDrivePath(e.target.value);
+                                setNewMappingDriveFolderId(undefined);
+                              }}
+                              placeholder="/Posted/nsfw"
+                              className="h-8 text-sm"
+                              data-testid="input-mapping-drive-path"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Create Subfolder</Label>
+                            <Switch
+                              checked={newMappingCreateSubfolder}
+                              onCheckedChange={setNewMappingCreateSubfolder}
+                              data-testid="switch-mapping-subfolder"
+                            />
+                          </div>
+                          {newMappingCreateSubfolder && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Subfolder Name</Label>
+                              <Input
+                                value={newMappingSubfolderName}
+                                onChange={(e) => setNewMappingSubfolderName(e.target.value)}
+                                placeholder="e.g., character name"
+                                className="h-8 text-sm"
+                                data-testid="input-mapping-subfolder-name"
+                              />
+                            </div>
+                          )}
+                          {discordWebhooks.length > 0 && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Discord Webhook (optional)</Label>
+                              <Select
+                                value={newMappingWebhookId || "none"}
+                                onValueChange={(v) => setNewMappingWebhookId(v === "none" ? undefined : v)}
+                              >
+                                <SelectTrigger className="h-8 text-sm" data-testid="select-mapping-webhook">
+                                  <SelectValue placeholder="No webhook" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No webhook</SelectItem>
+                                  {discordWebhooks.map((w) => (
+                                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={handleAddMapping}
+                              disabled={!newMappingName.trim() || !newMappingImportFolder.trim() || savingMapping}
+                              data-testid="button-save-mapping"
+                            >
+                              {savingMapping ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Mapping"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setShowMappingForm(false)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowMappingForm(true)}
+                          className="w-full"
+                          data-testid="button-add-mapping"
+                        >
+                          Add Folder Mapping
+                        </Button>
+                      )}
+
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <Label className="text-sm">Use Folder Mappings</Label>
+                        <Switch
+                          checked={autoModeSettings.useFolderMappings || false}
+                          onCheckedChange={(enabled) => onAutoModeChange({ ...autoModeSettings, useFolderMappings: enabled })}
+                          data-testid="switch-use-folder-mappings"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        When enabled, uploads from matching folders will auto-route to their linked Drive folder, Discord webhook, etc.
+                      </p>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
               </Accordion>
             </div>
           </CardContent>

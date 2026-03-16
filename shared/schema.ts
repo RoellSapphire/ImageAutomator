@@ -164,8 +164,8 @@ export const autoModeSettingsSchema = z.object({
   skipEnhance: z.boolean().default(false),
   skipExport: z.boolean().default(false),
   skipPublish: z.boolean().default(false),
-  skipDeviantArt: z.boolean().default(false),
   skipDiscord: z.boolean().default(true), // Discord disabled by default
+  useFolderMappings: z.boolean().default(false), // Use folder mappings for auto-routing
   discordWebhookId: z.string().optional(), // Selected webhook preset ID
   deleteOriginalsAfterProcess: z.boolean().default(false), // Delete uploaded originals after processing
 });
@@ -188,31 +188,19 @@ export const armemberPlanSchema = z.object({
 
 export type ARMemberPlan = z.infer<typeof armemberPlanSchema>;
 
-// DeviantArt OAuth Tokens
-export const deviantartTokensSchema = z.object({
-  accessToken: z.string(),
-  refreshToken: z.string(),
-  expiresAt: z.number(),
-});
-
-export type DeviantArtTokens = z.infer<typeof deviantartTokensSchema>;
-
-// DeviantArt Scheduled Upload
-export const scheduledUploadSchema = z.object({
+// Folder Mapping - links import folder names to Google Drive output folders
+export const folderMappingSchema = z.object({
   id: z.string(),
-  imageUrl: z.string(), // Legacy: could be URL or imageId
-  filePath: z.string().optional(), // Direct file path for persistence across restarts
-  title: z.string(),
-  description: z.string(),
-  category: z.string(),
-  isMature: z.boolean(),
-  scheduledTime: z.string(),
-  status: z.enum(["pending", "uploading", "published", "failed"]),
-  publishedUrl: z.string().optional(),
-  error: z.string().optional(),
+  name: z.string().min(1), // Display name (e.g., "NSFW", "SFW")
+  importFolder: z.string().min(1), // Import folder name to match
+  driveConfig: driveConfigSchema, // Google Drive output folder config
+  wordpressConfig: wordpressConfigSchema.partial().optional(), // Optional per-folder WP config
+  discordWebhookId: z.string().optional(), // Optional per-folder Discord webhook
 });
 
-export type ScheduledUpload = z.infer<typeof scheduledUploadSchema>;
+export type FolderMapping = z.infer<typeof folderMappingSchema>;
+export const insertFolderMappingSchema = folderMappingSchema.omit({ id: true });
+export type InsertFolderMapping = z.infer<typeof insertFolderMappingSchema>;
 
 // Discord Webhook Preset
 export const discordWebhookSchema = z.object({

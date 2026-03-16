@@ -14,6 +14,7 @@ export type {
   ARMemberPlan,
   DescriptionTemplate,
   AutoModeSettings,
+  FolderMapping,
 } from "@shared/schema";
 
 // Workflow step definitions
