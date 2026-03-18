@@ -6,14 +6,14 @@ import sharp from 'sharp';
 import { storage } from './storage';
 import type { ProcessedImage, FolderMapping, DriveConfig } from '@shared/schema';
 import { findOrCreateFolder, findOrCreateSubfolderById, uploadFileToDrive, checkDriveConnection } from './google-drive';
+import { hasBeenProcessed, markProcessed, clearByPrefix, flushTracker } from './processed-tracker';
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'];
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
 const PROCESSED_DIR = path.join(process.cwd(), 'processed');
 const THUMBNAILS_DIR = path.join(process.cwd(), 'thumbnails');
 
-// Track files we've already processed to avoid duplicates
-const processedFiles = new Set<string>();
+// Processed files are now tracked persistently via processed-tracker
 // Track files being written to (wait for them to stabilize)
 const pendingFiles = new Map<string, { size: number; lastChanged: number }>();
 // Processing queue - prevents concurrent uploads that overwhelm Drive API
@@ -312,14 +312,14 @@ function pollFolder(watchedFolder: WatchedFolder) {
         continue;
       }
 
-      const fileKey = `${watchedFolder.id}:${filePath}`;
-      if (processedFiles.has(fileKey)) continue;
+      const fileKey = `folder:${watchedFolder.id}:${filePath}`;
+      if (hasBeenProcessed(fileKey)) continue;
 
       // Wait for file to be fully written
       if (!isFileStable(filePath)) continue;
 
       // Mark as processed immediately to avoid double-processing
-      processedFiles.add(fileKey);
+      markProcessed(fileKey);
 
       // Add to queue for sequential processing
       processingQueue.push({ filePath, watchedFolder });
@@ -435,7 +435,7 @@ function markExistingFiles(watchedFolder: WatchedFolder) {
     for (const file of files) {
       if (isImageFile(file)) {
         const filePath = path.join(watchedFolder.localPath, file);
-        processedFiles.add(`${watchedFolder.id}:${filePath}`);
+        markProcessed(`folder:${watchedFolder.id}:${filePath}`);
       }
     }
   } catch {}
@@ -444,7 +444,7 @@ function markExistingFiles(watchedFolder: WatchedFolder) {
 export function stopWatcher(): void {
   watcherState.running = false;
   Array.from(pollTimers.keys()).forEach(id => stopPolling(id));
-  processedFiles.clear();
+  flushTracker(); // Save any pending tracked entries to disk
   pendingFiles.clear();
   processingQueue.length = 0;
   isProcessingQueue = false;
@@ -457,6 +457,5 @@ export function isWatcherRunning(): boolean {
 
 // Clear processed files cache for a folder (allows re-processing)
 export function resetFolder(folderId: string): void {
-  const prefix = `${folderId}:`;
-  Array.from(processedFiles).filter(k => k.startsWith(prefix)).forEach(k => processedFiles.delete(k));
+  clearByPrefix(`folder:${folderId}:`);
 }

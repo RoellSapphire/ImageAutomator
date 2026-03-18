@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import { storage } from './storage';
 import type { ProcessedImage, CivitaiAutoFetchSettings, WorkflowPreset } from '@shared/schema';
 import { getGenerationFeed, downloadImage, deleteGeneratedImages, getCivitaiUser } from './civitai';
+import { hasBeenProcessed, markProcessed, markProcessedBatch } from './processed-tracker';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
 const THUMBNAILS_DIR = path.join(process.cwd(), 'thumbnails');
@@ -40,8 +41,7 @@ let state: AutoFetchState = {
   lastError: null,
 };
 
-// Track Civitai image IDs we've already seen/fetched
-const seenImageIds = new Set<string>();
+// Civitai image IDs are now tracked persistently via processed-tracker
 
 let pollTimer: NodeJS.Timeout | null = null;
 let isPolling = false;
@@ -98,10 +98,10 @@ async function pollCivitai() {
           const img = step.images![imgIdx];
           if (!img.available || !img.url) continue;
 
-          const compoundId = `${item.id}_${stepIdx}_${imgIdx}`;
+          const compoundId = `civitai:${item.id}_${stepIdx}_${imgIdx}`;
 
-          if (seenImageIds.has(compoundId)) continue;
-          seenImageIds.add(compoundId);
+          if (hasBeenProcessed(compoundId)) continue;
+          markProcessed(compoundId);
 
           state.buffer.push({
             id: compoundId,
@@ -266,22 +266,24 @@ export async function startAutoFetch(): Promise<void> {
   state.running = true;
   state.lastError = null;
 
-  // Do initial poll to seed the seen set (so we only pick up NEW images going forward)
+  // Seed current images so we only pick up NEW ones going forward
   console.log('[CivitaiAutoFetch] Seeding initial image list...');
   try {
     const response = await getGenerationFeed(apiKey, { sort: 'Newest' });
+    const seedIds: string[] = [];
     for (const item of response.items) {
       for (let stepIdx = 0; stepIdx < (item.steps?.length || 0); stepIdx++) {
         const step = item.steps![stepIdx];
         for (let imgIdx = 0; imgIdx < (step.images?.length || 0); imgIdx++) {
           const img = step.images![imgIdx];
           if (img.available && img.url) {
-            seenImageIds.add(`${item.id}_${stepIdx}_${imgIdx}`);
+            seedIds.push(`civitai:${item.id}_${stepIdx}_${imgIdx}`);
           }
         }
       }
     }
-    console.log(`[CivitaiAutoFetch] Seeded ${seenImageIds.size} existing images`);
+    markProcessedBatch(seedIds);
+    console.log(`[CivitaiAutoFetch] Seeded ${seedIds.length} existing images`);
   } catch (err) {
     console.error('[CivitaiAutoFetch] Seed error:', err);
   }
