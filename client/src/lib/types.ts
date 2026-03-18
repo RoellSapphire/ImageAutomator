@@ -16,6 +16,7 @@ export type {
   AutoModeSettings,
   FolderMapping,
   WorkflowPreset,
+  CivitaiAutoFetchSettings,
 } from "@shared/schema";
 
 // Workflow step definitions

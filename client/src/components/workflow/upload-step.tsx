@@ -165,6 +165,54 @@ export function UploadStep({
   const [newWatchDrivePath, setNewWatchDrivePath] = useState('');
   const [savingWatcher, setSavingWatcher] = useState(false);
 
+  // Civitai Auto-Fetch state
+  interface AutoFetchStatus {
+    running: boolean;
+    bufferCount: number;
+    totalFetched: number;
+    totalProcessed: number;
+    lastPollAt: string | null;
+    lastError: string | null;
+  }
+  const [autoFetchStatus, setAutoFetchStatus] = useState<AutoFetchStatus | null>(null);
+  const [autoFetchSettings, setAutoFetchSettings] = useState<{
+    enabled: boolean;
+    pollIntervalMs: number;
+    batchThreshold: number;
+    deleteAfterFetch: boolean;
+    autoProcess: boolean;
+  }>({
+    enabled: false,
+    pollIntervalMs: 60000,
+    batchThreshold: 10,
+    deleteAfterFetch: false,
+    autoProcess: true,
+  });
+
+  const refreshAutoFetchStatus = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/civitai/autofetch/status');
+      if (resp.ok) {
+        const data = await resp.json();
+        setAutoFetchStatus(data);
+        if (data.settings) {
+          setAutoFetchSettings(data.settings);
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    refreshAutoFetchStatus();
+  }, [refreshAutoFetchStatus]);
+
+  // Poll auto-fetch status when running
+  useEffect(() => {
+    if (!autoFetchStatus?.running) return;
+    const interval = setInterval(refreshAutoFetchStatus, 5000);
+    return () => clearInterval(interval);
+  }, [autoFetchStatus?.running, refreshAutoFetchStatus]);
+
   const loadWatcherStatus = useCallback(async () => {
     try {
       const response = await fetch('/api/watcher/status');
@@ -1950,6 +1998,129 @@ export function UploadStep({
                               </div>
                             ))}
                           </div>
+                        </div>
+                      )}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="civitai-autofetch" className="border rounded-lg px-3 mt-2">
+                  <AccordionTrigger className="py-3 hover:no-underline">
+                    <div className="flex items-center gap-2">
+                      <Download className="h-4 w-4" />
+                      <span className="text-sm font-medium">Civitai Auto-Fetch</span>
+                      {autoFetchStatus?.running && (
+                        <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0 bg-green-600">Running</Badge>
+                      )}
+                      {(autoFetchStatus?.bufferCount ?? 0) > 0 && (
+                        <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                          {autoFetchStatus?.bufferCount} buffered
+                        </Badge>
+                      )}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-3">
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted-foreground">
+                        Automatically fetch new images from Civitai, buffer them, and process when a batch threshold is reached.
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Poll Interval (seconds)</Label>
+                          <Input
+                            type="number"
+                            min={10}
+                            value={Math.round((autoFetchSettings?.pollIntervalMs ?? 60000) / 1000)}
+                            onChange={(e) => setAutoFetchSettings(prev => ({
+                              ...prev!,
+                              pollIntervalMs: Math.max(10000, parseInt(e.target.value || '60') * 1000),
+                            }))}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Batch Threshold</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={autoFetchSettings?.batchThreshold ?? 10}
+                            onChange={(e) => setAutoFetchSettings(prev => ({
+                              ...prev!,
+                              batchThreshold: Math.max(1, Math.min(100, parseInt(e.target.value || '10'))),
+                            }))}
+                            className="h-8 text-xs"
+                          />
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Process when this many images collected</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id="autofetch-delete"
+                          checked={autoFetchSettings?.deleteAfterFetch ?? false}
+                          onCheckedChange={(checked) => setAutoFetchSettings(prev => ({
+                            ...prev!,
+                            deleteAfterFetch: checked,
+                          }))}
+                        />
+                        <Label htmlFor="autofetch-delete" className="text-xs">Delete from Civitai after fetching</Label>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant={autoFetchStatus?.running ? "destructive" : "default"}
+                          onClick={async () => {
+                            // Save settings first
+                            await fetch('/api/civitai/autofetch/settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                ...autoFetchSettings,
+                                enabled: !autoFetchStatus?.running,
+                              }),
+                            });
+                            const endpoint = autoFetchStatus?.running
+                              ? '/api/civitai/autofetch/stop'
+                              : '/api/civitai/autofetch/start';
+                            const resp = await fetch(endpoint, { method: 'POST' });
+                            if (resp.ok) {
+                              refreshAutoFetchStatus();
+                            }
+                          }}
+                          className="flex-1"
+                        >
+                          {autoFetchStatus?.running ? (
+                            <><Square className="h-3 w-3 mr-1" /> Stop</>
+                          ) : (
+                            <><Play className="h-3 w-3 mr-1" /> Start Auto-Fetch</>
+                          )}
+                        </Button>
+                        {(autoFetchStatus?.bufferCount ?? 0) > 0 && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              await fetch('/api/civitai/autofetch/process-now', { method: 'POST' });
+                              refreshAutoFetchStatus();
+                            }}
+                          >
+                            Process Now ({autoFetchStatus?.bufferCount})
+                          </Button>
+                        )}
+                      </div>
+
+                      {autoFetchStatus && (
+                        <div className="text-xs text-muted-foreground space-y-0.5 bg-muted/50 rounded p-2">
+                          <div>Fetched: {autoFetchStatus.totalFetched} | Processed: {autoFetchStatus.totalProcessed}</div>
+                          {autoFetchStatus.lastPollAt && (
+                            <div>Last poll: {new Date(autoFetchStatus.lastPollAt).toLocaleTimeString()}</div>
+                          )}
+                          {autoFetchStatus.lastError && (
+                            <div className="text-red-400">Error: {autoFetchStatus.lastError}</div>
+                          )}
                         </div>
                       )}
                     </div>

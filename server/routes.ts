@@ -12,6 +12,7 @@ import { checkDriveConnection, findOrCreateFolder, findOrCreateSubfolderById, up
 import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
 import * as discord from "./discord";
 import { getWatchedFolders, addWatchedFolder, updateWatchedFolder, removeWatchedFolder, startWatcher, stopWatcher, isWatcherRunning, getRecentEvents, resetFolder } from "./folder-watcher";
+import { startAutoFetch, stopAutoFetch, getAutoFetchStatus, clearAutoFetchBuffer, forceProcessBuffer } from "./civitai-autofetch";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const PROCESSED_DIR = path.join(process.cwd(), "processed");
@@ -1613,6 +1614,66 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
     } catch (error) {
       console.error('Civitai import error:', error);
       res.status(500).json({ message: 'Failed to import Civitai images' });
+    }
+  });
+
+  // Civitai Auto-Fetch endpoints
+  app.get('/api/civitai/autofetch/status', async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getUserSettings();
+      res.json({
+        ...getAutoFetchStatus(),
+        settings: settings.civitaiAutoFetchSettings || null,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/civitai/autofetch/start', async (req: Request, res: Response) => {
+    try {
+      await startAutoFetch();
+      res.json({ success: true, ...getAutoFetchStatus() });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/civitai/autofetch/stop', async (req: Request, res: Response) => {
+    try {
+      stopAutoFetch();
+      res.json({ success: true, running: false });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/civitai/autofetch/settings', async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getUserSettings();
+      settings.civitaiAutoFetchSettings = req.body;
+      await storage.saveUserSettings(settings);
+      res.json({ success: true, settings: req.body });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/civitai/autofetch/clear', async (req: Request, res: Response) => {
+    try {
+      const cleared = clearAutoFetchBuffer();
+      res.json({ success: true, clearedCount: cleared.length });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/civitai/autofetch/process-now', async (req: Request, res: Response) => {
+    try {
+      await forceProcessBuffer();
+      res.json({ success: true, ...getAutoFetchStatus() });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 

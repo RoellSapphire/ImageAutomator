@@ -229,3 +229,15 @@ export const workflowPresetSchema = z.object({
 export type WorkflowPreset = z.infer<typeof workflowPresetSchema>;
 export const insertWorkflowPresetSchema = workflowPresetSchema.omit({ id: true });
 export type InsertWorkflowPreset = z.infer<typeof insertWorkflowPresetSchema>;
+
+// Civitai Auto-Fetch Settings
+export const civitaiAutoFetchSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  pollIntervalMs: z.number().min(10000).default(60000), // How often to check (default 1 min)
+  batchThreshold: z.number().min(1).max(100).default(10), // Process when this many images collected
+  deleteAfterFetch: z.boolean().default(false), // Delete from Civitai after fetching
+  autoProcess: z.boolean().default(true), // Auto-trigger workflow when threshold reached
+  presetId: z.string().optional(), // Which preset to use for auto-processing
+});
+
+export type CivitaiAutoFetchSettings = z.infer<typeof civitaiAutoFetchSettingsSchema>;
