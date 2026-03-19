@@ -143,6 +143,7 @@ export function UploadStep({
   interface WatchedFolder {
     id: string;
     localPath: string;
+    driveInputPath?: string;
     mappingId?: string;
     driveConfig?: { folderId?: string; folderPath?: string; createSubfolder?: boolean; subfolderName?: string };
     enabled: boolean;
@@ -160,7 +161,9 @@ export function UploadStep({
   const [watcherRunning, setWatcherRunning] = useState(false);
   const [watcherEvents, setWatcherEvents] = useState<WatcherEvent[]>([]);
   const [showWatcherForm, setShowWatcherForm] = useState(false);
+  const [newWatchInputSource, setNewWatchInputSource] = useState<'local' | 'drive'>('local');
   const [newWatchPath, setNewWatchPath] = useState('');
+  const [newWatchDriveInputPath, setNewWatchDriveInputPath] = useState('');
   const [newWatchMappingId, setNewWatchMappingId] = useState<string | undefined>();
   const [newWatchDrivePath, setNewWatchDrivePath] = useState('');
   const [savingWatcher, setSavingWatcher] = useState(false);
@@ -260,14 +263,20 @@ export function UploadStep({
   };
 
   const handleAddWatchedFolder = async () => {
-    if (!newWatchPath.trim()) return;
+    const isDriveInput = newWatchInputSource === 'drive';
+    if (isDriveInput ? !newWatchDriveInputPath.trim() : !newWatchPath.trim()) return;
     setSavingWatcher(true);
     try {
       const body: any = {
-        localPath: newWatchPath.trim(),
         enabled: true,
-        pollIntervalMs: 5000,
+        pollIntervalMs: isDriveInput ? 15000 : 5000,
       };
+      if (isDriveInput) {
+        body.driveInputPath = newWatchDriveInputPath.trim();
+        body.localPath = '';
+      } else {
+        body.localPath = newWatchPath.trim();
+      }
       if (newWatchMappingId) {
         body.mappingId = newWatchMappingId;
       } else if (newWatchDrivePath.trim()) {
@@ -282,8 +291,10 @@ export function UploadStep({
         const folder = await response.json();
         setWatchedFolders([...watchedFolders, folder]);
         setNewWatchPath('');
+        setNewWatchDriveInputPath('');
         setNewWatchMappingId(undefined);
         setNewWatchDrivePath('');
+        setNewWatchInputSource('local');
         setShowWatcherForm(false);
       }
     } catch (error) {
@@ -1869,12 +1880,14 @@ export function UploadStep({
                             return (
                               <div key={wf.id} className="flex items-center justify-between gap-2 p-2 border rounded-md bg-muted/30">
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{wf.localPath}</p>
+                                  <p className="text-sm font-medium truncate">
+                                    {wf.driveInputPath ? `Drive: ${wf.driveInputPath}` : wf.localPath}
+                                  </p>
                                   <p className="text-xs text-muted-foreground truncate">
                                     {linkedMapping
                                       ? `Mapping: ${linkedMapping.name} → ${linkedMapping.driveConfig?.folderPath || '/'}`
                                       : wf.driveConfig?.folderPath
-                                        ? `Drive: ${wf.driveConfig.folderPath}`
+                                        ? `Drive Output: ${wf.driveConfig.folderPath}`
                                         : 'No output configured'}
                                   </p>
                                 </div>
@@ -1906,17 +1919,48 @@ export function UploadStep({
                       {showWatcherForm ? (
                         <div className="space-y-3 p-3 border rounded-md">
                           <div className="space-y-1">
-                            <Label className="text-xs">Local Folder Path</Label>
-                            <Input
-                              value={newWatchPath}
-                              onChange={(e) => setNewWatchPath(e.target.value)}
-                              placeholder="e.g., C:\Users\Mike\output\nsfw"
-                              className="h-8 text-sm"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Full path to the folder you want to watch for new images
-                            </p>
+                            <Label className="text-xs">Input Source</Label>
+                            <Select
+                              value={newWatchInputSource}
+                              onValueChange={(v) => setNewWatchInputSource(v as 'local' | 'drive')}
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="local">Local Folder</SelectItem>
+                                <SelectItem value="drive">Google Drive Folder</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
+
+                          {newWatchInputSource === 'local' ? (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Local Folder Path</Label>
+                              <Input
+                                value={newWatchPath}
+                                onChange={(e) => setNewWatchPath(e.target.value)}
+                                placeholder="e.g., C:\Users\Mike\output\nsfw"
+                                className="h-8 text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Full path to the folder you want to watch for new images
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Google Drive Input Path</Label>
+                              <Input
+                                value={newWatchDriveInputPath}
+                                onChange={(e) => setNewWatchDriveInputPath(e.target.value)}
+                                placeholder="e.g., /My Drive/Posted/exclusiveIn"
+                                className="h-8 text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Google Drive folder path to poll for new images
+                              </p>
+                            </div>
+                          )}
 
                           <div className="space-y-1">
                             <Label className="text-xs">Link to Folder Mapping (optional)</Label>
@@ -1957,7 +2001,7 @@ export function UploadStep({
                             <Button
                               size="sm"
                               onClick={handleAddWatchedFolder}
-                              disabled={!newWatchPath.trim() || savingWatcher}
+                              disabled={(newWatchInputSource === 'local' ? !newWatchPath.trim() : !newWatchDriveInputPath.trim()) || savingWatcher}
                             >
                               {savingWatcher ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Watch Folder"}
                             </Button>

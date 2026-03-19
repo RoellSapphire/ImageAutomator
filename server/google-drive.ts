@@ -249,6 +249,70 @@ export async function findOrCreateSubfolderById(parentFolderId: string, subfolde
   return createResponse.data.id || parentFolderId;
 }
 
+export interface DriveFileInfo {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
+export async function listImagesInFolder(folderId: string): Promise<DriveFileInfo[]> {
+  const drive = await getUncachableGoogleDriveClient();
+
+  const imageTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/bmp",
+    "image/tiff",
+  ].map(t => `mimeType = '${t}'`).join(' or ');
+
+  const query = `'${folderId}' in parents and (${imageTypes}) and trashed = false`;
+
+  const allFiles: DriveFileInfo[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const response = await drive.files.list({
+      q: query,
+      fields: 'nextPageToken, files(id, name, mimeType, size)',
+      orderBy: 'createdTime',
+      pageSize: 100,
+      pageToken,
+    });
+
+    const files = (response.data.files || []).map(file => ({
+      id: file.id || '',
+      name: file.name || '',
+      mimeType: file.mimeType || '',
+      size: parseInt(file.size || '0', 10),
+    }));
+
+    allFiles.push(...files);
+    pageToken = response.data.nextPageToken || undefined;
+  } while (pageToken);
+
+  return allFiles;
+}
+
+export async function downloadFileFromDrive(fileId: string, destPath: string): Promise<void> {
+  const drive = await getUncachableGoogleDriveClient();
+
+  const response = await drive.files.get(
+    { fileId, alt: 'media' },
+    { responseType: 'stream' }
+  );
+
+  return new Promise((resolve, reject) => {
+    const dest = fs.createWriteStream(destPath);
+    (response.data as NodeJS.ReadableStream)
+      .pipe(dest)
+      .on('finish', resolve)
+      .on('error', reject);
+  });
+}
+
 export async function uploadFileToDrive(
   filePath: string,
   fileName: string,

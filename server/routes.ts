@@ -1793,16 +1793,17 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
   app.post('/api/watched-folders', async (req: Request, res: Response) => {
     try {
-      const { localPath, mappingId, driveConfig, enabled, pollIntervalMs } = req.body;
-      if (!localPath) {
-        return res.status(400).json({ message: 'localPath is required' });
+      const { localPath, driveInputPath, mappingId, driveConfig, enabled, pollIntervalMs } = req.body;
+      if (!localPath && !driveInputPath) {
+        return res.status(400).json({ message: 'Either localPath or driveInputPath is required' });
       }
       const folder = await addWatchedFolder({
-        localPath,
+        localPath: localPath || '',
+        driveInputPath,
         mappingId,
         driveConfig,
         enabled: enabled !== false,
-        pollIntervalMs: pollIntervalMs || 5000,
+        pollIntervalMs: pollIntervalMs || (driveInputPath ? 15000 : 5000),
       });
       res.json(folder);
     } catch (error) {

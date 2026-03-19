@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import sharp from 'sharp';
 import { storage } from './storage';
 import type { ProcessedImage, FolderMapping, DriveConfig } from '@shared/schema';
-import { findOrCreateFolder, findOrCreateSubfolderById, uploadFileToDrive, checkDriveConnection } from './google-drive';
+import { findOrCreateFolder, findOrCreateSubfolderById, uploadFileToDrive, checkDriveConnection, listImagesInFolder, downloadFileFromDrive } from './google-drive';
 import { hasBeenProcessed, markProcessed, clearByPrefix, flushTracker } from './processed-tracker';
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'];
@@ -23,6 +23,7 @@ let isProcessingQueue = false;
 interface WatchedFolder {
   id: string;
   localPath: string;        // Local folder to watch (e.g., C:\Users\Mike\output\nsfw)
+  driveInputPath?: string;  // Google Drive folder path as input source (polls Drive API instead of local fs)
   mappingId?: string;       // Link to a folder mapping for auto-routing
   driveConfig?: DriveConfig; // Direct drive config if no mapping
   enabled: boolean;
@@ -130,7 +131,7 @@ async function processQueue() {
       emitEvent({
         type: 'error',
         folderId: item.watchedFolder.id,
-        folderPath: item.watchedFolder.localPath,
+        folderPath: item.watchedFolder.driveInputPath || item.watchedFolder.localPath,
         fileName: path.basename(item.filePath),
         message: `Failed: ${msg}`,
       });
@@ -142,11 +143,12 @@ async function processQueue() {
 
 async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
   const fileName = path.basename(filePath);
+  const displayPath = watchedFolder.driveInputPath || watchedFolder.localPath;
 
   emitEvent({
     type: 'file_detected',
     folderId: watchedFolder.id,
-    folderPath: watchedFolder.localPath,
+    folderPath: displayPath,
     fileName,
     message: `New image detected: ${fileName}`,
   });
@@ -201,14 +203,14 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
 
     await storage.addImages(workflow.id, [image]);
     await storage.updateWorkflow(workflow.id, {
-      uploadedZipName: path.basename(watchedFolder.localPath),
+      uploadedZipName: path.basename(displayPath),
       currentStep: 4, // Skip to export
     });
 
     emitEvent({
       type: 'processing',
       folderId: watchedFolder.id,
-      folderPath: watchedFolder.localPath,
+      folderPath: displayPath,
       fileName,
       message: `Processing ${fileName}...`,
     });
@@ -254,7 +256,7 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
         emitEvent({
           type: 'exported',
           folderId: watchedFolder.id,
-          folderPath: watchedFolder.localPath,
+          folderPath: displayPath,
           fileName,
           message: `Exported ${fileName} to Google Drive (ID: ${result.id})`,
         });
@@ -262,7 +264,7 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
         emitEvent({
           type: 'error',
           folderId: watchedFolder.id,
-          folderPath: watchedFolder.localPath,
+          folderPath: displayPath,
           fileName,
           message: `Google Drive not connected - skipped export for ${fileName}`,
         });
@@ -272,7 +274,7 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
     emitEvent({
       type: 'complete',
       folderId: watchedFolder.id,
-      folderPath: watchedFolder.localPath,
+      folderPath: displayPath,
       fileName,
       message: `Completed processing ${fileName}`,
     });
@@ -282,7 +284,7 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
     emitEvent({
       type: 'error',
       folderId: watchedFolder.id,
-      folderPath: watchedFolder.localPath,
+      folderPath: displayPath,
       fileName,
       message: `Error processing ${fileName}: ${msg}`,
     });
@@ -336,19 +338,76 @@ function pollFolder(watchedFolder: WatchedFolder) {
   }
 }
 
+async function pollDriveFolder(watchedFolder: WatchedFolder) {
+  if (!watchedFolder.enabled || !watchedFolder.driveInputPath) return;
+
+  try {
+    const driveStatus = await checkDriveConnection();
+    if (!driveStatus.connected) return;
+
+    // Resolve Drive input path to a folder ID
+    const inputFolderId = await findOrCreateFolder(watchedFolder.driveInputPath);
+
+    const files = await listImagesInFolder(inputFolderId);
+
+    for (const file of files) {
+      const fileKey = `folder:${watchedFolder.id}:drive:${file.id}`;
+      if (hasBeenProcessed(fileKey)) continue;
+
+      // Mark immediately to avoid double-processing
+      markProcessed(fileKey);
+
+      // Download the file to a temp location
+      const tempDir = path.join(process.cwd(), 'temp-drive-downloads');
+      fs.mkdirSync(tempDir, { recursive: true });
+      const tempPath = path.join(tempDir, file.name);
+
+      try {
+        await downloadFileFromDrive(file.id, tempPath);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        emitEvent({
+          type: 'error',
+          folderId: watchedFolder.id,
+          folderPath: watchedFolder.driveInputPath || '',
+          fileName: file.name,
+          message: `Failed to download ${file.name} from Drive: ${msg}`,
+        });
+        continue;
+      }
+
+      // Add to queue for sequential processing
+      processingQueue.push({ filePath: tempPath, watchedFolder });
+    }
+
+    if (processingQueue.length > 0) {
+      processQueue().catch(err => {
+        console.error('[FolderWatcher] Queue processing error:', err);
+      });
+    }
+  } catch (error) {
+    // Drive might not be connected or folder doesn't exist
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[FolderWatcher] Drive poll error for ${watchedFolder.driveInputPath}:`, msg);
+  }
+}
+
 function startPolling(watchedFolder: WatchedFolder) {
   stopPolling(watchedFolder.id);
 
   if (!watchedFolder.enabled) return;
 
-  const interval = watchedFolder.pollIntervalMs || 5000;
-  const timer = setInterval(() => pollFolder(watchedFolder), interval);
+  const isDriveInput = !!watchedFolder.driveInputPath;
+  const interval = watchedFolder.pollIntervalMs || (isDriveInput ? 15000 : 5000); // Slower default for Drive API
+  const pollFn = isDriveInput ? () => pollDriveFolder(watchedFolder) : () => pollFolder(watchedFolder);
+  const timer = setInterval(pollFn, interval);
   pollTimers.set(watchedFolder.id, timer);
 
   // Do an initial poll
-  pollFolder(watchedFolder);
+  pollFn();
 
-  console.log(`[FolderWatcher] Started watching: ${watchedFolder.localPath} (every ${interval}ms)`);
+  const displayPath = isDriveInput ? `Drive:${watchedFolder.driveInputPath}` : watchedFolder.localPath;
+  console.log(`[FolderWatcher] Started watching: ${displayPath} (every ${interval}ms)`);
 }
 
 function stopPolling(folderId: string) {
@@ -428,7 +487,21 @@ export async function startWatcher(): Promise<void> {
   console.log(`[FolderWatcher] Started watching ${folders.filter(f => f.enabled).length} folder(s)`);
 }
 
-function markExistingFiles(watchedFolder: WatchedFolder) {
+async function markExistingFiles(watchedFolder: WatchedFolder) {
+  if (watchedFolder.driveInputPath) {
+    // For Drive input folders, mark existing files by Drive file ID
+    try {
+      const driveStatus = await checkDriveConnection();
+      if (!driveStatus.connected) return;
+      const inputFolderId = await findOrCreateFolder(watchedFolder.driveInputPath);
+      const files = await listImagesInFolder(inputFolderId);
+      for (const file of files) {
+        markProcessed(`folder:${watchedFolder.id}:drive:${file.id}`);
+      }
+    } catch {}
+    return;
+  }
+
   try {
     if (!fs.existsSync(watchedFolder.localPath)) return;
     const files = fs.readdirSync(watchedFolder.localPath);
