@@ -82,6 +82,20 @@ export const enhanceConfigSchema = z.object({
 
 export type EnhanceConfig = z.infer<typeof enhanceConfigSchema>;
 
+// WordPress Publish Target
+export const publishTargetEnum = z.enum(["post", "proof_gallery", "portfolio"]);
+export type PublishTarget = z.infer<typeof publishTargetEnum>;
+
+// PixProof photo display name options
+export const proofDisplayNameEnum = z.enum([
+  "unique_ids",
+  "consecutive_ids",
+  "file_name",
+  "unique_ids_photo_title",
+  "consecutive_ids_photo_title",
+]);
+export type ProofDisplayName = z.infer<typeof proofDisplayNameEnum>;
+
 // WordPress Configuration
 export const wordpressConfigSchema = z.object({
   siteUrl: z.string().url(),
@@ -94,6 +108,15 @@ export const wordpressConfigSchema = z.object({
   armemberPlanId: z.string().optional(),
   categories: z.array(z.number()).optional(),
   tags: z.array(z.number()).optional(),
+  // Publish target selection
+  publishTarget: publishTargetEnum.default("post"),
+  // PixProof Proof Gallery fields
+  proofClientName: z.string().optional(),
+  proofEventDate: z.string().optional(),
+  proofDisplayName: proofDisplayNameEnum.default("unique_ids"),
+  proofDisableArchive: z.boolean().default(false),
+  // Novo Portfolio fields
+  portfolioCols: z.number().min(1).max(6).default(3),
 });
 
 export type WordPressConfig = z.infer<typeof wordpressConfigSchema>;

@@ -17,6 +17,8 @@ export type {
   FolderMapping,
   WorkflowPreset,
   CivitaiAutoFetchSettings,
+  PublishTarget,
+  ProofDisplayName,
 } from "@shared/schema";
 
 // Workflow step definitions

@@ -148,6 +148,10 @@ const DEFAULT_WORDPRESS_CONFIG: WordPressConfig = {
   postStatus: "draft",
   postTitle: "",
   postContent: "",
+  publishTarget: "post",
+  proofDisplayName: "unique_ids",
+  proofDisableArchive: false,
+  portfolioCols: 3,
 };
 
 export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }: WorkflowContainerProps) {
@@ -161,6 +165,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
   const [driveConfig, setDriveConfig] = useState<DriveConfig>(DEFAULT_DRIVE_CONFIG);
   const [wordpressConfig, setWordpressConfig] = useState<WordPressConfig>(DEFAULT_WORDPRESS_CONFIG);
   const [armemberPlans, setArmemberPlans] = useState<ARMemberPlan[]>([]);
+  const [availableTargets, setAvailableTargets] = useState<string[]>(['post']);
   const [autoModeSettings, setAutoModeSettings] = useState<AutoModeSettings>(DEFAULT_AUTO_MODE);
   const [descriptionTemplates, setDescriptionTemplates] = useState<DescriptionTemplate[]>(DEFAULT_TEMPLATES);
   const [isAutoRunning, setIsAutoRunning] = useState(false);
@@ -232,6 +237,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             setIsWpVerified(true);
             if (data.armemberPlans) {
               setArmemberPlans(data.armemberPlans);
+            }
+            if (data.availableTargets) {
+              setAvailableTargets(data.availableTargets);
             }
           }
         } catch (error) {
@@ -660,6 +668,9 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
         if (data.armemberPlans) {
           setArmemberPlans(data.armemberPlans);
         }
+        if (data.availableTargets) {
+          setAvailableTargets(data.availableTargets);
+        }
         toast({
           title: "Connection Verified",
           description: "WordPress site is ready for publishing",
@@ -931,6 +942,7 @@ export function WorkflowContainer({ currentStep, onStepChange, onStepComplete }:
             config={wordpressConfig}
             onConfigChange={handleWordpressConfigChange}
             armemberPlans={armemberPlans}
+            availableTargets={availableTargets}
             isVerifying={isWpVerifying}
             isVerified={isWpVerified}
             onVerify={handleWpVerify}

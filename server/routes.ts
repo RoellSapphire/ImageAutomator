@@ -7,7 +7,7 @@ import sharp from "sharp";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
-import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage, FolderMapping, WorkflowPreset } from "@shared/schema";
+import type { ProcessedImage, RenameConfig, EnhanceConfig, WordPressConfig, DriveConfig, WatermarkImage, FolderMapping, WorkflowPreset, PublishTarget } from "@shared/schema";
 import { checkDriveConnection, findOrCreateFolder, findOrCreateSubfolderById, uploadFileToDrive, listFolders, getAuthUrl, handleOAuthCallback, clearTokens } from "./google-drive";
 import { getCivitaiUser, getGenerationFeed, downloadImage, deleteGeneratedImages, type GenerationFeedImage } from "./civitai";
 import * as discord from "./discord";
@@ -776,6 +776,25 @@ export async function registerRoutes(
         ];
       }
 
+      // Detect available custom post types for publish targets
+      const availableTargets: string[] = ['post']; // Always available
+      try {
+        const typesResponse = await fetch(`${siteUrl}/wp-json/wp/v2/types`, {
+          headers: { 'Authorization': `Basic ${auth}` },
+        });
+        if (typesResponse.ok) {
+          const types = await typesResponse.json();
+          if (types['proof_gallery']) {
+            availableTargets.push('proof_gallery');
+          }
+          if (types['pt-portfolio']) {
+            availableTargets.push('portfolio');
+          }
+        }
+      } catch (typesError) {
+        console.log('Could not detect CPTs:', typesError);
+      }
+
       res.json({
         success: true,
         user: {
@@ -784,6 +803,7 @@ export async function registerRoutes(
           email: user.email,
         },
         armemberPlans,
+        availableTargets,
       });
 
     } catch (error) {
@@ -805,16 +825,18 @@ export async function registerRoutes(
       }
 
       const auth = Buffer.from(`${wordpressConfig.username}:${wordpressConfig.applicationPassword}`).toString('base64');
+      const publishTarget = wordpressConfig.publishTarget || 'post';
 
+      // Step 1: Upload all images to WordPress media library (shared across all targets)
       const uploadedMedia: { id: number; url: string }[] = [];
-      
+
       for (const image of workflow.images) {
         const imagePath = image.processedPath || image.originalPath;
         if (!imagePath || !fs.existsSync(imagePath)) continue;
 
         const imageBuffer = fs.readFileSync(imagePath);
-        const mimeType = image.format === 'png' ? 'image/png' : 
-                        image.format === 'webp' ? 'image/webp' : 
+        const mimeType = image.format === 'png' ? 'image/png' :
+                        image.format === 'webp' ? 'image/webp' :
                         'image/jpeg';
 
         const formData = new FormData();
@@ -845,38 +867,79 @@ export async function registerRoutes(
         }
       }
 
-      let postContent = wordpressConfig.postContent || '';
-      
-      if (uploadedMedia.length > 0) {
+      // Step 2: Create the post/gallery based on publish target
+      let postEndpoint: string;
+      let postData: any;
+
+      if (publishTarget === 'proof_gallery') {
+        // PixProof Proof Gallery
+        postEndpoint = `${wordpressConfig.siteUrl}/wp-json/wp/v2/proof-galleries`;
+        postData = {
+          title: wordpressConfig.postTitle || 'Proof Gallery',
+          content: wordpressConfig.postContent || '',
+          status: wordpressConfig.postStatus,
+          meta: {
+            '_pixproof_main_gallery': uploadedMedia.map(m => m.id).join(','),
+            '_pixproof_client_name': wordpressConfig.proofClientName || '',
+            '_pixproof_event_date': wordpressConfig.proofEventDate || '',
+            '_pixproof_photo_display_name': wordpressConfig.proofDisplayName || 'unique_ids',
+            '_pixproof_disable_archive_download': wordpressConfig.proofDisableArchive ? 'on' : '',
+          },
+        };
+        if (uploadedMedia.length > 0) {
+          postData.featured_media = uploadedMedia[0].id;
+        }
+      } else if (publishTarget === 'portfolio') {
+        // Novo Portfolio Gallery
+        postEndpoint = `${wordpressConfig.siteUrl}/wp-json/wp/v2/portfolio`;
         const mediaIds = uploadedMedia.map(m => m.id);
-        const galleryBlock = `<!-- wp:gallery {"ids":[${mediaIds.join(',')}],"columns":3,"linkTo":"none"} -->
+        postData = {
+          title: wordpressConfig.postTitle || 'Portfolio Gallery',
+          content: wordpressConfig.postContent || '',
+          status: wordpressConfig.postStatus,
+          meta: {
+            'portfolio_type': 'gallery',
+            'items_list': JSON.stringify(mediaIds),
+            'item_slider': JSON.stringify(mediaIds),
+            'gallery_cols': String(wordpressConfig.portfolioCols || 3),
+            'short_description': wordpressConfig.postContent || '',
+          },
+        };
+        if (uploadedMedia.length > 0) {
+          postData.featured_media = uploadedMedia[0].id;
+        }
+      } else {
+        // Standard WordPress Post (existing behavior)
+        postEndpoint = `${wordpressConfig.siteUrl}/wp-json/wp/v2/posts`;
+
+        let postContent = wordpressConfig.postContent || '';
+        if (uploadedMedia.length > 0) {
+          const mediaIds = uploadedMedia.map(m => m.id);
+          const galleryBlock = `<!-- wp:gallery {"ids":[${mediaIds.join(',')}],"columns":3,"linkTo":"none"} -->
 <figure class="wp-block-gallery has-nested-images columns-3 is-cropped">
 ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${m.url}" alt="" class="wp-image-${m.id}"/></figure><!-- /wp:image -->`).join('\n')}
 </figure>
 <!-- /wp:gallery -->`;
-        
-        postContent = postContent + '\n\n' + galleryBlock;
+          postContent = postContent + '\n\n' + galleryBlock;
+        }
+
+        postData = {
+          title: wordpressConfig.postTitle || 'Civitai Images',
+          content: postContent,
+          status: wordpressConfig.postStatus,
+        };
+        if (uploadedMedia.length > 0) {
+          postData.featured_media = uploadedMedia[0].id;
+        }
+        if (wordpressConfig.categories && wordpressConfig.categories.length > 0) {
+          postData.categories = wordpressConfig.categories;
+        }
+        if (wordpressConfig.tags && wordpressConfig.tags.length > 0) {
+          postData.tags = wordpressConfig.tags;
+        }
       }
 
-      const postData: any = {
-        title: wordpressConfig.postTitle || 'Civitai Images',
-        content: postContent,
-        status: wordpressConfig.postStatus,
-      };
-
-      if (uploadedMedia.length > 0) {
-        postData.featured_media = uploadedMedia[0].id;
-      }
-
-      if (wordpressConfig.categories && wordpressConfig.categories.length > 0) {
-        postData.categories = wordpressConfig.categories;
-      }
-
-      if (wordpressConfig.tags && wordpressConfig.tags.length > 0) {
-        postData.tags = wordpressConfig.tags;
-      }
-
-      const postResponse = await fetch(`${wordpressConfig.siteUrl}/wp-json/wp/v2/posts`, {
+      const postResponse = await fetch(postEndpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Basic ${auth}`,
@@ -887,23 +950,46 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
 
       if (!postResponse.ok) {
         const errorData = await postResponse.json();
-        return res.status(postResponse.status).json({ 
-          message: errorData.message || 'Failed to create post' 
+        return res.status(postResponse.status).json({
+          message: errorData.message || 'Failed to create post'
         });
       }
 
       const post = await postResponse.json();
 
+      // Step 3: For proof galleries, set post_parent on each uploaded media item
+      if (publishTarget === 'proof_gallery' && uploadedMedia.length > 0) {
+        for (const media of uploadedMedia) {
+          try {
+            await fetch(`${wordpressConfig.siteUrl}/wp-json/wp/v2/media/${media.id}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ post: post.id }),
+            });
+          } catch (parentError) {
+            console.error(`Failed to set post_parent for media ${media.id}:`, parentError);
+          }
+        }
+      }
+
+      // Step 4: Apply ARMember restrictions (works for all post types)
       if (wordpressConfig.armemberPlanId) {
         try {
-          // ARMember uses post meta 'arm_access_plan' as an array of plan IDs
-          // And 'arm_item_protection' set to 1 to enable restriction
           const planIds = wordpressConfig.armemberPlanId.split(',').map((id: string) => id.trim());
-          
-          console.log('Applying ARMember restriction for post', post.id, 'with plans:', planIds);
-          
-          // First try: Update post meta directly using correct ARMember meta keys
-          const metaResponse = await fetch(`${wordpressConfig.siteUrl}/wp-json/wp/v2/posts/${post.id}`, {
+
+          console.log('Applying ARMember restriction for', publishTarget, post.id, 'with plans:', planIds);
+
+          // Determine the correct REST endpoint for the post type
+          const metaEndpoint = publishTarget === 'proof_gallery'
+            ? `${wordpressConfig.siteUrl}/wp-json/wp/v2/proof-galleries/${post.id}`
+            : publishTarget === 'portfolio'
+            ? `${wordpressConfig.siteUrl}/wp-json/wp/v2/portfolio/${post.id}`
+            : `${wordpressConfig.siteUrl}/wp-json/wp/v2/posts/${post.id}`;
+
+          const metaResponse = await fetch(metaEndpoint, {
             method: 'POST',
             headers: {
               'Authorization': `Basic ${auth}`,
@@ -916,14 +1002,13 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
               },
             }),
           });
-          
+
           const metaResponseText = await metaResponse.text();
           console.log('ARMember meta update response:', metaResponse.status, metaResponseText.substring(0, 200));
-          
+
           if (!metaResponse.ok) {
             console.log('ARMember meta update via post failed, trying alternative...');
-            
-            // Try alternative: Use the ARMember API endpoint if available
+
             const armemberApiKey = wordpressConfig.armemberApiKey;
             if (armemberApiKey) {
               const armUrl = `${wordpressConfig.siteUrl}/wp-json/armember/v1/arm_restrict_post?arm_api_key=${armemberApiKey}`;
@@ -955,11 +1040,15 @@ ${uploadedMedia.map(m => `<!-- wp:image {"id":${m.id},"sizeSlug":"large"} --><fi
         status: "completed",
       });
 
+      const targetLabel = publishTarget === 'proof_gallery' ? 'Proof gallery'
+        : publishTarget === 'portfolio' ? 'Portfolio'
+        : 'Post';
+
       res.json({
         success: true,
         postId: post.id,
         postUrl: post.link,
-        message: 'Post published successfully',
+        message: `${targetLabel} published successfully`,
       });
 
     } catch (error) {
