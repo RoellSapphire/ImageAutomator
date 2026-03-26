@@ -17,7 +17,7 @@ const THUMBNAILS_DIR = path.join(process.cwd(), 'thumbnails');
 // Track files being written to (wait for them to stabilize)
 const pendingFiles = new Map<string, { size: number; lastChanged: number }>();
 // Processing queue - prevents concurrent uploads that overwhelm Drive API
-const processingQueue: Array<{ filePath: string; watchedFolder: WatchedFolder }> = [];
+const processingQueue: Array<{ filePath: string; watchedFolder: WatchedFolder; subfolder?: string }> = [];
 let isProcessingQueue = false;
 
 interface WatchedFolder {
@@ -121,7 +121,7 @@ async function processQueue() {
     const item = processingQueue.shift()!;
     try {
       await withTimeout(
-        processNewFile(item.filePath, item.watchedFolder),
+        processNewFile(item.filePath, item.watchedFolder, item.subfolder),
         120000, // 2 minute timeout per file
         `Processing ${path.basename(item.filePath)}`
       );
@@ -141,7 +141,7 @@ async function processQueue() {
   isProcessingQueue = false;
 }
 
-async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
+async function processNewFile(filePath: string, watchedFolder: WatchedFolder, subfolder?: string) {
   const fileName = path.basename(filePath);
   const displayPath = watchedFolder.driveInputPath || watchedFolder.localPath;
 
@@ -150,7 +150,7 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
     folderId: watchedFolder.id,
     folderPath: displayPath,
     fileName,
-    message: `New image detected: ${fileName}`,
+    message: `New image detected: ${subfolder ? subfolder + '/' : ''}${fileName}`,
   });
 
   try {
@@ -199,6 +199,7 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
       height,
       format: path.extname(fileName).slice(1).toLowerCase(),
       status: 'completed',
+      subfolder,
     };
 
     await storage.addImages(workflow.id, [image]);
@@ -245,13 +246,24 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
           targetFolderId = await findOrCreateFolder(folderPath);
         }
 
+        // Create subfolder on Drive if image has one (preserves model folder structure)
+        let uploadFolderId = targetFolderId;
+        if (subfolder) {
+          let currentParent = targetFolderId;
+          const parts = subfolder.split('/').filter(Boolean);
+          for (const part of parts) {
+            currentParent = await findOrCreateSubfolderById(currentParent, part);
+          }
+          uploadFolderId = currentParent;
+        }
+
         const ext = path.extname(fileName).toLowerCase();
         const mimeType = ext === '.png' ? 'image/png' :
                         ext === '.webp' ? 'image/webp' :
                         ext === '.gif' ? 'image/gif' :
                         'image/jpeg';
 
-        const result = await uploadFileToDrive(destPath, fileName, mimeType, targetFolderId);
+        const result = await uploadFileToDrive(destPath, fileName, mimeType, uploadFolderId);
 
         emitEvent({
           type: 'exported',
@@ -291,6 +303,47 @@ async function processNewFile(filePath: string, watchedFolder: WatchedFolder) {
   }
 }
 
+function scanDirectory(dirPath: string, rootPath: string, watchedFolder: WatchedFolder) {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dirPath);
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry);
+
+    let stat;
+    try {
+      stat = fs.statSync(fullPath);
+    } catch {
+      continue;
+    }
+
+    if (stat.isDirectory()) {
+      // Recurse into subdirectories
+      scanDirectory(fullPath, rootPath, watchedFolder);
+      continue;
+    }
+
+    if (!isImageFile(entry)) continue;
+
+    const fileKey = `folder:${watchedFolder.id}:${fullPath}`;
+    if (hasBeenProcessed(fileKey)) continue;
+
+    if (!isFileStable(fullPath)) continue;
+
+    markProcessed(fileKey);
+
+    // Compute subfolder relative to the watched root
+    const relative = path.relative(rootPath, dirPath);
+    const subfolder = relative && relative !== '.' ? relative.replace(/\\/g, '/') : undefined;
+
+    processingQueue.push({ filePath: fullPath, watchedFolder, subfolder });
+  }
+}
+
 function pollFolder(watchedFolder: WatchedFolder) {
   if (!watchedFolder.enabled) return;
 
@@ -299,33 +352,7 @@ function pollFolder(watchedFolder: WatchedFolder) {
       return;
     }
 
-    const files = fs.readdirSync(watchedFolder.localPath);
-
-    for (const file of files) {
-      const filePath = path.join(watchedFolder.localPath, file);
-
-      // Skip directories, non-images, and already processed files
-      if (!isImageFile(file)) continue;
-
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) continue;
-      } catch {
-        continue;
-      }
-
-      const fileKey = `folder:${watchedFolder.id}:${filePath}`;
-      if (hasBeenProcessed(fileKey)) continue;
-
-      // Wait for file to be fully written
-      if (!isFileStable(filePath)) continue;
-
-      // Mark as processed immediately to avoid double-processing
-      markProcessed(fileKey);
-
-      // Add to queue for sequential processing
-      processingQueue.push({ filePath, watchedFolder });
-    }
+    scanDirectory(watchedFolder.localPath, watchedFolder.localPath, watchedFolder);
 
     // Kick off queue processing if items were added
     if (processingQueue.length > 0) {

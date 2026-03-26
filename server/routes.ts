@@ -133,9 +133,13 @@ export async function registerRoutes(
 
       for (const entry of zipEntries) {
         if (entry.isDirectory) continue;
-        
+
         const filename = path.basename(entry.entryName);
         if (!isImageFile(filename)) continue;
+
+        // Extract subfolder from ZIP entry path (e.g. "ModelName/image.jpg" → "ModelName")
+        const entryDir = path.dirname(entry.entryName);
+        const subfolder = entryDir && entryDir !== '.' ? entryDir.replace(/\\/g, '/') : undefined;
 
         const imageId = randomUUID();
         const originalPath = path.join(workflowDir, `${imageId}_${filename}`);
@@ -143,10 +147,10 @@ export async function registerRoutes(
 
         zip.extractEntryTo(entry, workflowDir, false, true, false, filename);
         const extractedPath = path.join(workflowDir, filename);
-        
+
         if (fs.existsSync(extractedPath)) {
           fs.renameSync(extractedPath, originalPath);
-          
+
           await createThumbnail(originalPath, thumbnailPath);
           const dimensions = await getImageDimensions(originalPath);
           const stats = fs.statSync(originalPath);
@@ -162,6 +166,7 @@ export async function registerRoutes(
             height: dimensions?.height,
             format: path.extname(filename).slice(1).toLowerCase(),
             status: "pending",
+            subfolder,
           });
         }
       }
@@ -196,9 +201,22 @@ export async function registerRoutes(
 
       const images: ProcessedImage[] = [];
 
+      // Subfolder paths may come from the 'subfolders' body field (JSON map: filename → subfolder)
+      let subfolderMap: Record<string, string> = {};
+      if (req.body?.subfolders) {
+        try {
+          subfolderMap = JSON.parse(req.body.subfolders);
+        } catch { /* ignore parse errors */ }
+      }
+
       for (const file of files) {
-        const filename = file.originalname;
+        const filename = path.basename(file.originalname);
         if (!isImageFile(filename)) continue;
+
+        // Extract subfolder from the originalname path or body map
+        const rawDir = path.dirname(file.originalname);
+        const subfolder = subfolderMap[file.originalname]
+          || (rawDir && rawDir !== '.' ? rawDir.replace(/\\/g, '/') : undefined);
 
         const imageId = randomUUID();
         const originalPath = path.join(workflowDir, `${imageId}_${filename}`);
@@ -221,6 +239,7 @@ export async function registerRoutes(
           height: dimensions?.height,
           format: path.extname(filename).slice(1).toLowerCase(),
           status: "pending",
+          subfolder,
         });
       }
 
@@ -322,7 +341,14 @@ export async function registerRoutes(
               : enhanceConfig.outputFormat;
             newName = `${renameConfig.prefix}${renameConfig.separator}${number}.${ext}`;
           }
-          const processedPath = path.join(processedDir, newName);
+          // Preserve subfolder structure in output
+          const outputSubDir = image.subfolder
+            ? path.join(processedDir, image.subfolder)
+            : processedDir;
+          if (image.subfolder) {
+            fs.mkdirSync(outputSubDir, { recursive: true });
+          }
+          const processedPath = path.join(outputSubDir, newName);
 
           if (skipEnhance) {
             fs.copyFileSync(image.originalPath, processedPath);
@@ -647,9 +673,29 @@ export async function registerRoutes(
       console.log(`[Drive Export] Final target folder ID: ${targetFolderId}`);
       const uploadedFiles: { name: string; id: string; link: string }[] = [];
 
+      // Cache subfolder IDs to avoid re-creating for each image
+      const subfolderIdCache: Record<string, string> = {};
+
       for (const image of workflow.images) {
         const imagePath = image.processedPath || image.originalPath;
         if (!imagePath || !fs.existsSync(imagePath)) continue;
+
+        // Resolve the upload folder: create subfolder on Drive if image has one
+        let uploadFolderId = targetFolderId;
+        if (image.subfolder) {
+          if (subfolderIdCache[image.subfolder]) {
+            uploadFolderId = subfolderIdCache[image.subfolder];
+          } else {
+            // Support nested subfolders (e.g. "ModelA/variant1") by creating each level
+            let currentParent = targetFolderId;
+            const parts = image.subfolder.split('/').filter(Boolean);
+            for (const part of parts) {
+              currentParent = await findOrCreateSubfolderById(currentParent, part);
+            }
+            uploadFolderId = currentParent;
+            subfolderIdCache[image.subfolder] = uploadFolderId;
+          }
+        }
 
         const ext = path.extname(image.newName).toLowerCase();
         const mimeType = ext === '.png' ? 'image/png' :
@@ -658,8 +704,8 @@ export async function registerRoutes(
                         'image/jpeg';
 
         try {
-          console.log(`[Drive Export] Uploading ${image.newName} to folder ${targetFolderId}`);
-          const result = await uploadFileToDrive(imagePath, image.newName, mimeType, targetFolderId);
+          console.log(`[Drive Export] Uploading ${image.newName} to folder ${uploadFolderId}${image.subfolder ? ` (subfolder: ${image.subfolder})` : ''}`);
+          const result = await uploadFileToDrive(imagePath, image.newName, mimeType, uploadFolderId);
           uploadedFiles.push({
             name: image.newName,
             id: result.id,

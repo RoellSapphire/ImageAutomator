@@ -37,6 +37,7 @@ export const processedImageSchema = z.object({
   format: z.string(),
   status: workflowStatusEnum,
   error: z.string().optional(),
+  subfolder: z.string().optional(),
 });
 
 export type ProcessedImage = z.infer<typeof processedImageSchema>;
